@@ -1,0 +1,13 @@
+node_modules/
+.next/
+.next-test/
+out/
+.env*
+.env
+.env.local
+.env.*.local
+!.env.example
+*.log
+.sites-runtime/
+artifacts/
+.tools/

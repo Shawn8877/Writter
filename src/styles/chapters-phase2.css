@@ -1,0 +1,106 @@
+/* Phase two additions share the existing chapter layout and palette. */
+.chapter-save-actions,
+.chapter-recovery-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.editor-save-status.editor-save-error { color: #e5b48c; }
+.chapter-save-alert {
+  border: 1px solid #71543d;
+  background: #2a221c;
+  color: #e7c5a5;
+  padding: 12px 14px;
+  border-radius: 9px;
+  margin: 12px 0;
+  font-size: 12px;
+  line-height: 1.8;
+}
+.chapter-save-alert p { margin: 0 0 10px; }
+.chapter-recovery-note {
+  color: #a3c6ba;
+  margin: 8px 0;
+  font-size: 12px;
+}
+.chapter-editor-notes {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.chapter-editor-notes .editor-notice { margin-bottom: 0; }
+.chapter-local-recovery {
+  color: #a49b8f;
+  flex-shrink: 0;
+  font-size: 11px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.chapter-local-recovery:hover { color: var(--gold); }
+.chapter-version-loading,
+.chapter-versions-empty {
+  color: #a8a49d;
+  display: flex;
+  gap: 10px;
+  padding: 20px 0;
+  align-items: center;
+  font-size: 13px;
+}
+.chapter-version-list,
+.chapter-recovery-list {
+  display: grid;
+  gap: 8px;
+  max-height: 225px;
+  overflow-y: auto;
+  margin: 18px 0;
+}
+.chapter-version-list button,
+.chapter-recovery-list button {
+  border: 1px solid #3a3630;
+  border-radius: 8px;
+  background: #1b1b19;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.chapter-version-list button:hover,
+.chapter-recovery-list button:hover,
+.chapter-version-list button.selected {
+  border-color: #9a835a;
+  background: #29261f;
+}
+.chapter-version-list strong,
+.chapter-recovery-list strong { font-size: 12px; font-weight: 500; color: #e8e1d5; }
+.chapter-version-list span,
+.chapter-recovery-list span { font-size: 11px; color: #a49d90; }
+.chapter-recovery-list p,
+.chapter-recovery-empty { color: #aea99f; font-size: 12px; line-height: 1.8; }
+.chapter-version-preview h3 { font-size: 14px; margin: 15px 0 8px; }
+.chapter-version-preview > p { color: #a49d90; font-size: 11px; margin-bottom: 15px; }
+.chapter-version-body,
+.chapter-copy-input {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border: 1px solid #3a3630;
+  border-radius: 8px;
+  background: #171816;
+  padding: 16px;
+  color: #cdc7ba;
+  max-height: 38vh;
+  overflow: auto;
+  font-size: 13px;
+  line-height: 2;
+  width: 100%;
+}
+@media (max-width: 640px) {
+  .editor-footer { flex-wrap: wrap; gap: 12px; }
+  .chapter-save-actions { margin-left: auto; }
+  .chapter-editor-notes { flex-wrap: wrap; gap: 8px; }
+  .chapter-editor-notes .editor-notice { width: 100%; }
+  .editor-save-status { max-width: 58%; text-align: right; flex-wrap: wrap; }
+}

@@ -1,0 +1,25 @@
+.header-account { display:flex;align-items:center;gap:12px; }
+.workspace-top-actions { flex-shrink:0; }
+.auth-controls .button { flex-shrink:0;white-space:nowrap; }
+.novel-card-container { position:relative;min-width:0;display:flex;flex-direction:column; }
+.novel-card-container > .novel-card { flex:1; }
+.novel-card-delete { position:absolute;right:15px;bottom:13px;background:#242b20;border:1px solid #4b543e; }
+.novel-card-container .progress-label { padding-right:35px; }
+.button-danger { background:#66392f;color:#ffe2ce;border:1px solid #b47965; }
+.cloud-error { padding:17px 20px;display:flex;justify-content:space-between;gap:15px;margin-bottom:22px;align-items:center; }
+.cloud-error p { font-size:14px;color:var(--muted); }
+.memory-filter { display:flex;gap:10px;flex-wrap:wrap;margin-bottom:22px; }
+.memory-filter button { border:1px solid var(--border);background:var(--panel);color:var(--muted);padding:6px 12px;border-radius:6px;font-size:13px; }
+.memory-filter button.selected { color:var(--gold);border-color:#a28c60; }
+.memory-detail { flex:1;min-width:0; }
+.memory-detail > p { white-space:pre-wrap;overflow-wrap:anywhere;color:#b3bea5;font-size:14px;line-height:1.9;margin:15px 0; }
+.memory-row-heading { display:flex;align-items:center;flex-wrap:wrap;gap:10px; }
+.memory-row-heading h3 { font-size:17px;font-weight:500;flex:1; }
+.memory-row-heading .memory-actions { display:flex;gap:3px;margin-left:auto; }
+.memory-source { font-size:12px;color:#a0b287;display:flex;align-items:center;gap:6px; }
+.memory-source a { color:var(--gold);text-decoration:underline;text-underline-offset:3px; }
+.import-list { display:grid;gap:10px;margin-top:16px;max-height:350px;overflow:auto; }
+.import-list label { padding:12px;border:1px solid var(--border);border-radius:7px;display:flex;align-items:center;gap:10px;font-size:14px; }
+.import-list label small { color:var(--muted);font-size:12px;display:block; }
+.migration-notice { font-size:13px;color:var(--muted);line-height:1.9; }
+@media(max-width:760px){ .header-account{gap:7px}.header-account > .button{display:none}.cloud-error{align-items:flex-start;flex-direction:column}.memory-row-heading{gap:8px}.memory-row-heading h3{flex-basis:100%}.workspace-top-actions .auth-email,.workspace-top-actions > .badge{display:none} }
