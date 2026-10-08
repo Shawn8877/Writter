@@ -43,7 +43,7 @@ do $$ declare n uuid; c uuid; r bigint; result jsonb; begin
   perform pg_temp.expect_true((result->'chapter'->>'word_count')::int=3,'database word count');
   perform pg_temp.expect_true((select summary='测试摘要' from public.chapter_summaries where chapter_id=c),'summary synced');
   perform pg_temp.expect_true((select count(*)=0 from public.chapter_versions where chapter_id=c),'autosave creates no version');
-  perform pg_temp.expect_rejected(format('select public.studio_save_chapter(%L,%L,%s,%L,false)',n,c,r,'{"title":"冲突","outline":"","body":"不可覆盖","summary":""}'),'40001','stale revision');
+  perform pg_temp.expect_rejected(format('select public.studio_save_chapter(%L,%L,%s,%L,false)',n,c,r,'{"title":"冲突","outline":"","body":"不可覆盖","summary":""}'),'PT409','stale revision');
   select revision into r from public.chapters where id=c;
   result=public.studio_save_chapter(n,c,r,'{"title":"版本章","outline":"大纲","body":"版本正文","summary":"新摘要"}',true);
   perform pg_temp.expect_true((select count(*)=1 from public.chapter_versions where chapter_id=c),'explicit version');
@@ -65,7 +65,7 @@ do $$ declare n uuid; r bigint; person uuid; begin
   select revision into r from public.novels where id=n;
   perform public.studio_patch_novel(n,r,'{"title":"重命名"}',jsonb_build_object('characters',jsonb_build_object('upsert',jsonb_build_array(jsonb_build_object('id',person,'name','改名后')))));
   perform pg_temp.expect_true((select name='改名后' and relationships='[{"to":"friend","kind":"ally"}]'::jsonb from public.characters where id=person),'partial patch retains JSON');
-  perform pg_temp.expect_rejected(format('select public.studio_patch_novel(%L,%s,%L)',n,r,'{"title":"旧版本覆盖"}'),'40001','metadata CAS');
+  perform pg_temp.expect_rejected(format('select public.studio_patch_novel(%L,%s,%L)',n,r,'{"title":"旧版本覆盖"}'),'PT409','metadata CAS');
   select revision into r from public.novels where id=n;
   perform pg_temp.expect_rejected(format('select public.studio_patch_novel(%L,%s,%L,%L)',n,r,'{"title":"必须回滚"}',jsonb_build_object('memory_items',jsonb_build_object('upsert',jsonb_build_array(jsonb_build_object('id',gen_random_uuid(),'title','错误来源','source_type','chapter','source_id',(select id from studio_test_ids where key='ca2')))))),'23514','atomic mutation failure');
   perform pg_temp.expect_true((select title='重命名' and revision=r from public.novels where id=n),'failed transaction rolled back metadata and revision');

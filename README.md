@@ -22,6 +22,8 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-public-key
 
 不需要 service role key 或 OpenAI key；不要将真实密钥放入源码或提交到 Git。`.env.example` 仅有占位配置。
 
+**Phase 2.5 状态（2026-10-08）：真实 Supabase 数据库与浏览器验收完成。** 沿用原项目和 A/B 账号，恢复暂停数据库；双向 RLS、948 汉字正文持久化、独立浏览器、自动保存、断网草稿、冲突、历史版本及级联删除通过。新增 002 迁移修复托管 API 对版本冲突反复重试的问题。14 组真实浏览器验收无非预期错误。详见 [Phase 2.5 报告](docs/PHASE_2_5.md)，配置和复验方式见 [Supabase 配置](docs/SUPABASE_SETUP.md)。Phase 3 与 OpenAI 尚未开始。
+
 ## 已实现
 
 - 邮箱密码注册、登录、退出、Cookie 会话与服务端访问保护。
@@ -60,16 +62,20 @@ npm run lint
 npm run test:db
 npm run test:repository
 npm run build
+npm run test:security
 npm start
 ```
 
 两个数据测试通过 PGlite 执行真实 PostgreSQL 迁移与 RLS，不依赖外部密钥，也不改线上数据。浏览器联调使用可选的本地测试服务；运行方式和验收范围见 [第二阶段报告](docs/PHASE_2.md)。本地验证不能替代真实 Supabase 项目的邮件、会话刷新和部署验证。
+
+真实项目另提供 `npm run test:cloud -- --allow-cloud-test-writes`，需要独立测试项目和两个真实测试账号；准备方式见 [云端验收脚本说明](docs/SUPABASE_SETUP.md#8-真实双账号-sdk-验收脚本)。该脚本会创建并保留 A/B 样本，仅删除本次创建的级联测试小说；它不能代替跨浏览器、断网草稿和自动保存界面验收。
 
 ## 数据与资料
 
 正式内容保存在 Supabase；本地草稿是恢复副本，不是云端备份。`localhost` 与 `127.0.0.1` 是不同浏览器来源，请固定一个地址使用。旧作品不会自动上传，需在原来保存作品的浏览器与地址里选择“导入本地作品”。
 
 - [配置 Supabase 与双账号权限验证](docs/SUPABASE_SETUP.md)
+- [Phase 2.5 云端验收状态与待办](docs/PHASE_2_5.md)
 - [第二阶段功能、表结构、变更文件、测试与第三阶段建议](docs/PHASE_2.md)
 - [当前架构与数据约定](docs/ARCHITECTURE.md)
 - [第一阶段历史交付记录](docs/PHASE_1.md)

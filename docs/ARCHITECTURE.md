@@ -34,7 +34,7 @@ Dashboard、创建页、小说工作台有服务端 layout 保护。小说 layou
 
 ## 数据模型
 
-完整约束、外键、索引、触发器和 policies 位于 `supabase/migrations/001_initial_schema.sql`。
+完整约束、外键、索引、触发器和 policies 位于 `supabase/migrations/001_initial_schema.sql`。`002_phase_2_5_fixes.sql` 修正三个事务 RPC 的冲突 SQLSTATE，不改变数据结构或权限。
 
 - novels 存储基本信息、创作输入、目标、状态和总纲；novel_bible 对 novel_id 唯一。
 - volumes / chapters 使用稳定 UUID，章节有独立 revision；修改其他设定不会让正文自动保存无谓冲突。
@@ -44,6 +44,8 @@ Dashboard、创建页、小说工作台有服务端 layout 保护。小说 layou
 - memory_items 是长期事实的规范来源。世界观页的地点／物品／能力／伏笔是相同记录的投影。伏笔 active/resolved/obsolete 与中文标签无损映射。
 
 记忆 source_type、source_id 指向章节、人物、世界资料或手工来源，chapter_id 可附加章节上下文。引用必须属于同一小说；来源仍被引用时单独删除会被拒绝，需先修改记忆。删除整部小说则原子级联。
+
+`memory_items.source_id` 是多态引用，无法用一个普通外键同时指向三个来源表。迁移使用 `studio_validate_memory_source` 检查来源类型、记录存在性和小说归属，并通过 `studio_protect_source` 阻止删除仍被记忆引用的章节、人物或世界资料。`chapter_id` 另有复合外键。删除未被来源引用的章节会级联删除版本和摘要，并清空其他表的可选章节关联；删除分卷只清空章节的 `volume_id`，保留章节。2026-10-08 已通过真实云端来源保护、分卷/章节删除和整本小说级联验收。
 
 ## 自动保存与并发
 
@@ -55,6 +57,8 @@ Dashboard、创建页、小说工作台有服务端 layout 保护。小说 layou
 6. 409 冲突暂停自动保存，保留编辑区，提供复制与明确确认后的云端加载。
 7. 章节保存后后台刷新完整小说；只有完整聚合响应提升小说 revision，避免把旧设定标为最新。
 8. 非章节表单固定打开时的小说 revision；编辑期间发生聚合更新时保留输入并要求核对，数据库仍对远端版本做最终检查。
+
+业务版本冲突使用 SQLSTATE `PT409`，由托管 PostgREST 直接返回 HTTP 409。不要用 `40001` 表示这种永久冲突：它代表 serialization_failure，部分托管版本会反复重试。002 已修正章节保存、小说更新与删除；真实三个 RPC 和两窗口 UI 均通过。Repository 保留对旧 40001 的兼容映射，但现有数据库必须执行 002。
 
 已保存字数由数据库去除空白后计算，包含标点；总字数汇总 word_count。编辑器当前字数是尚在编辑的文本预览。
 
@@ -77,6 +81,8 @@ Dashboard、创建页、小说工作台有服务端 layout 保护。小说 layou
 | `/api/ai` | POST | 鉴权后返回 501，占位且 UI 不调用 |
 
 ## 当前限制与第三阶段边界
+
+Phase 2.5 于 2026-10-08 完成真实 SDK/数据库与 14 组浏览器验收：现有 A/B 登录、Session 刷新、重开与新 Profile 持久化、双向 RLS、自动保存、断网草稿、冲突提示、版本及记忆通过。证据与范围见 [PHASE_2_5.md](PHASE_2_5.md)。正式请求失败不切换本地示例。本次停在 Phase 2.5，未开始 Phase 3，也未进行公网部署或生产邮件投递验收。
 
 为了兼容既有页面，作品列表和工作台目前读取完整聚合（含正文），尚不适合大量百万字作品的实际负载。开启 AI 连写前应拆为轻量列表、按章正文读取和版本分页，并加入服务器限流、配额、审计及更大文本的恢复存储。
 

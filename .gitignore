@@ -11,3 +11,4 @@ out/
 .sites-runtime/
 artifacts/
 .tools/
+supabase/.temp/

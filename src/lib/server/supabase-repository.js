@@ -23,7 +23,7 @@ export function assertRevision(value) {
 }
 function fail(error) {
   if (!error) return;
-  if (error.code === "40001") throw new RepositoryError("内容已被其他标签页或设备修改，请保留草稿并刷新。", 409, "CONFLICT");
+  if (error.code === "PT409" || error.code === "40001") throw new RepositoryError("内容已被其他标签页或设备修改，请保留草稿并刷新。", 409, "CONFLICT");
   if (error.code === "P0002" || error.code === "42501") throw new RepositoryError("记录不存在或无权访问。", 404, "NOT_FOUND");
   if (error.code === "23503") throw new RepositoryError("这条资料仍被来源记录引用，请先调整相关记忆。", 409, "SOURCE_IN_USE");
   if (["23514", "23502", "22P02", "22023"].includes(error.code)) throw new RepositoryError("数据格式不正确，或来源不属于当前小说。", 400);

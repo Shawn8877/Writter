@@ -5,7 +5,7 @@
  */
 import { createServer } from "node:http";
 import { createHmac, randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { PGlite } from "@electric-sql/pglite";
 
@@ -42,7 +42,13 @@ export async function startSupabaseFixture({ port = 43001, appPort = 43000, quie
     grant usage on schema auth to anon,authenticated;
     grant execute on function auth.uid() to anon,authenticated;
   `);
-  await db.exec(await readFile(new URL("../../supabase/migrations/001_initial_schema.sql", import.meta.url), "utf8").catch(async () => readFile(new URL("../../../supabase/migrations/001_initial_schema.sql", import.meta.url), "utf8")));
+  let migrations = new URL("../../supabase/migrations/", import.meta.url);
+  let migrationNames;
+  try { migrationNames = await readdir(migrations); }
+  catch { migrations = new URL("../../../supabase/migrations/", import.meta.url); migrationNames = await readdir(migrations); }
+  for (const name of migrationNames.filter((name) => name.endsWith(".sql")).sort()) {
+    await db.exec(await readFile(new URL(name, migrations), "utf8"));
+  }
 
   function session(account) {
     const now = Math.floor(Date.now() / 1000);

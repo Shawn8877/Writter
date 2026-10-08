@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
 
 // Load the actual server adapter without Next's server-only bundler guard.
@@ -67,7 +67,10 @@ try {
     create table auth.users(id uuid primary key,email text,raw_user_meta_data jsonb default '{}');
     create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
     grant usage on schema auth to authenticated; grant execute on function auth.uid() to authenticated;`);
-  await db.exec(await readFile(new URL("../supabase/migrations/001_initial_schema.sql", import.meta.url), "utf8"));
+  const migrations = new URL("../supabase/migrations/", import.meta.url);
+  for (const name of (await readdir(migrations)).filter((name) => name.endsWith(".sql")).sort()) {
+    await db.exec(await readFile(new URL(name, migrations), "utf8"));
+  }
   await db.query("insert into auth.users(id,email) values($1,'mapper@example.invalid')", [user.id]);
   await db.exec("set role authenticated");
   await db.query("select set_config('request.jwt.claim.sub',$1,false)", [user.id]);
