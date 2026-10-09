@@ -48,7 +48,7 @@ export function NovelPlanPreview({ builder, onConfirm }) {
     <Section title={`宏观故事阶段 · ${plan.storyStages.length} 个`} open><p className="builder-muted">这是长篇故事的宏观骨架，详细分卷、章节大纲与正文将在后续阶段展开。</p><StoryStages stages={plan.storyStages} /></Section>
     <Section title="不可随意改变的设定"><Facts value={plan.forbiddenChanges} /></Section>
     <Section title={`初始记忆 · ${plan.seedMemories.length} 条`}><div className="builder-memory-list">{plan.seedMemories.map((item, index) => <article key={index}><div><h3>{item.title}</h3><Badge>{memoryLabels[item.type]}</Badge><small>重要度 {item.importance}/5</small></div><p>{item.content}</p>{item.characterNames.length > 0 && <small>涉及人物：{item.characterNames.join("、")}</small>}</article>)}</div></Section>
-    <p className="builder-muted builder-preview-note"><Sparkles size={14} />此方案只保留在当前页面，刷新会丢失未确认内容。生成模型：{builder.preview.usage?.model || "OpenAI"}</p>
+    <p className="builder-muted builder-preview-note"><Sparkles size={14} />此方案只保留在当前页面，刷新会丢失未确认内容。生成模型：{builder.preview.usage?.model || "DeepSeek"}</p>
     {dialog && <Modal title={dialog === "regenerate" ? "重新生成完整方案？" : "取消这份方案？"} onClose={() => setDialog(null)}><p>{dialog === "regenerate" ? "将再次调用 AI，产生新的完整方案和调用费用。成功后替换当前预览与手工修改，已保存的小说不受影响；生成失败时会保留当前预览。" : "未保存的方案与手工修改将被丢弃，创意表单会保留。"}</p><div className="modal-actions"><button className="button button-ghost" onClick={() => setDialog(null)}>继续查看</button><button className="button button-primary" onClick={() => { setDialog(null); if (dialog === "regenerate") void builder.generate(builder.preview.input); else builder.cancel(); }}>{dialog === "regenerate" ? "生成新的完整方案" : "丢弃预览"}</button></div></Modal>}
   </section>;
 }

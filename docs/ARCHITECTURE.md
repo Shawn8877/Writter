@@ -18,7 +18,7 @@ Proxy / Server Client → 认证服务校验与 Cookie 刷新
 章节编辑器 → 按账号、小说、章节、编辑实例隔离的 localStorage 恢复草稿
 
 创建表单 → /api/ai/novels/build → server-only Novel Builder Service
-    → OpenAI Responses.parse + Zod Structured Outputs → 一致性校验 → 预览
+    → DeepSeek Responses JSON Schema → Zod + 一致性校验 → 预览
 预览修改 → /api/novels/ai-confirm → 再鉴权、校验 → create_ai_novel_bundle
     → 同一数据库事务创建所有小说资料 → 刷新聚合并进入工作台
 ```
@@ -91,7 +91,7 @@ Dashboard、创建页、小说工作台有服务端 layout 保护。小说 layou
 
 ## AI 构建的请求与保存边界
 
-模型和限额集中在 `src/lib/ai/config.js`；官方 SDK 客户端、提示词、服务均 `server-only`。Responses 使用 `zodTextFormat` + `responses.parse`，`store:false`，单次输出最多 24000 tokens，240 秒超时，不自动重试收费请求。默认模型 `gpt-6.1-sol`；环境变量可覆盖，实际可用性需真实账号验证。前端没有 SDK、密钥或可选择的代理地址。
+模型和限额集中在 `src/lib/ai/config.js`；客户端、提示词、服务均 `server-only`。`deepseek.js` 使用 OpenAI 兼容 SDK，固定请求 `https://api.deepseek.com/responses`；通过 `text.format` 发送 JSON Schema，使用 `reasoning.effort=low`，返回后由 Zod 再验证字段和跨字段一致性。单次输出最多 24000 tokens，240 秒超时，不自动重试收费请求。默认 `deepseek-flash`，只读取 `DEEPSEEK_API_KEY`、`DEEPSEEK_MODEL` 和可选 `DEEPSEEK_PROXY_URL`，不使用旧 OpenAI 凭据。前端没有 SDK、密钥或可选择的代理地址。
 
 输入、输出、确认都由正式 Zod schema 验证；额外检查规范人物引用、主角身份记忆、能力启用与边界、8–12 个连续阶段完整覆盖目标章节。Prompt 将用户创意当作素材，不能覆盖系统规则。自由文本的全部情节逻辑仍需要用户审阅，结构校验不是语义正确性的保证。
 
@@ -103,10 +103,10 @@ Dashboard、创建页、小说工作台有服务端 layout 保护。小说 layou
 
 ## 当前限制与第三阶段边界
 
-Phase 2.5 的验收记录见 [PHASE_2_5.md](PHASE_2_5.md)。2026-10-09 在原有基础上实现 Phase 3A，已通过测试样例和真实 Supabase 保存链路验收；OpenAI 密钥与模型读取已验证，实际生成返回余额耗尽，未完成真实 AI smoke test，当前为 **NOT READY FOR PHASE 3B**。可选服务端 `OPENAI_PROXY_URL` 只影响 OpenAI 请求，用于需要 HTTP(S) 代理的网络。不进行公网部署或生产邮件投递验收。
+Phase 2.5 的验收记录见 [PHASE_2_5.md](PHASE_2_5.md)。2026-10-09 Phase 3A 按用户要求从 OpenAI 切换为 DeepSeek。通过本地样例和既有真实 Supabase 保存链路检查；本次真实生成验收结果见 [PHASE_3A.md](PHASE_3A.md)。切换不增加数据库迁移、不改变账号权限、不修改既有小说。不进行公网部署或生产邮件投递验收。
 
 为了兼容既有页面，作品列表和工作台目前读取完整聚合（含正文），尚不适合大量百万字作品的实际负载。开启 AI 连写前应拆为轻量列表、按章正文读取和版本分页，并加入服务器限流、配额、审计及更大文本的恢复存储。
 
-`src/lib/server/ai-service.js` 仅保留章节/大纲等旧占位契约；真正的 Novel Builder 位于独立 `src/lib/ai`。本次不开放章节生成，不自动提取或更新长期记忆。应先补充 API 余额，验证真实构建质量与保存，再决定 Phase 3B 范围。
+`src/lib/server/ai-service.js` 仅保留章节/大纲等旧占位契约；真正的 Novel Builder 位于独立 `src/lib/ai`。本次不开放章节生成，不自动提取或更新长期记忆。完成基础方案真实验收后，再决定 Phase 3B 范围。
 
 本阶段未实现向量库、Embedding、RAG、AI 总结、Agent 或自动连写。测试替身只位于 scripts/testing，生产业务无模拟鉴权开关；NOVELAI_TEST_MODE 仅隔离 Next 构建目录。

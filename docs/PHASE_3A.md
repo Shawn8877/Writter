@@ -2,7 +2,7 @@
 
 验收日期：2026-10-09（北京时间）。继续现有项目，保留深色 UI、三栏工作台、账号、章节与 Memory；未重建项目，没有 TypeScript 应用源码。
 
-**AI 代码完成，密钥已配置；真实 API smoke test 已尝试，但被 API 余额不足阻塞。** 用户明确选择 OpenAI，并在本地保存了密钥。现已通过真实模型读取验证密钥及 `gpt-6.1-sol` 访问；生成接口返回 `429 / credit_balance_exhausted`（类型 `insufficient_quota`），尚未生成真实小说方案。样例通过不能视为模型质量或真实生成可用性已验证。最终判定：**NOT READY FOR PHASE 3B**。
+**DeepSeek 切换与真实生成验收已通过，默认模型 `deepseek-flash`。** 用户在 OpenAI 返回余额不足后明确要求切换。DeepSeek 密钥与模型访问、真实方案预览、修改确认、云端保存及双账号隔离均通过。本次只切换 Phase 3A 的模型提供方，不实现下一阶段功能。
 
 ## 前置检查
 
@@ -16,15 +16,16 @@ Phase 2.5 已就绪。开发前用现有 A/B 账号重新验证真实 Supabase�
 
 ## SDK、模型与服务器配置
 
-- 官方 `openai` JavaScript SDK 7.30.1，Zod 4.6.5；`responses.parse` + `zodTextFormat`。
-- 配置集中在 `src/lib/ai/config.js`，默认 `gpt-6.1-sol`，实际调用模型以 `OPENAI_MODEL` 为准。默认模型使用 low reasoning，其他可配置模型不盲目附加该参数。
-- 客户端位于 `openai.js`，带 `server-only`，固定官方 API 地址，不接受浏览器传入 key、模型或代理 URL。
-- 使用 `store:false`；最多 24000 output tokens，240 秒超时，SDK 自动重试关闭。Route 最长运行时间设置 300 秒，部署平台仍需支持相应运行时长。
-- `.env.example` 中 `OPENAI_API_KEY`、`OPENAI_MODEL` 都是空值。真实值只允许设置在服务器 `.env.local` 或部署平台环境变量，禁止 `NEXT_PUBLIC_*` 和 Git。
-- 可选 `OPENAI_PROXY_URL` 仅用于 OpenAI 请求，使用官方 SDK 推荐的 Undici fetch + ProxyAgent，连接池复用；为空时保持原有直连。此电脑的 Node 直连超时，已沿用 Windows 现有本地 HTTP 代理写入忽略的 `.env.local`。部署环境应按实际网络设置，不复制开发机的回环地址；本机代理程序需保持运行。
-- 未配置 key 时返回 `AI_NOT_CONFIGURED` 中文提示；不保留 mock 成功分支，也不自动转用 DeepSeek。
+- 使用 DeepSeek 官方文档推荐的 OpenAI 兼容 JavaScript SDK 7.30.1；库名不代表调用 OpenAI 服务。
+- 配置集中在 `src/lib/ai/config.js`，默认 `deepseek-flash`，实际模型以 `DEEPSEEK_MODEL` 为准。
+- 客户端为 `deepseek.js`，带 `server-only`，固定 `https://api.deepseek.com`；不接受浏览器传入 key、模型或代理 URL，不回退到 OpenAI。
+- Responses 使用 `text.format.type=json_schema`，发送完整 schema，`reasoning.effort=low`，非流式；最多 24000 output tokens，240 秒超时，不自动重试收费请求。Route 最长运行时间 300 秒。
+- 模型结构化输出后，服务器独立执行严格字段、长度与人物/阶段一致性校验。不接受空结果、截断结果、代码围栏或错误结构；失败仍记录真实 token 元数据。仅记录失败字段路径和校验类别，不记录生成正文。
+- `.env.example` 中 `DEEPSEEK_API_KEY`、`DEEPSEEK_MODEL`、`DEEPSEEK_PROXY_URL` 均为空；真实值仅保存在服务器，禁止 `NEXT_PUBLIC_*` 和 Git。应用不读取旧 `OPENAI_*` 值。
+- 可选代理只影响 DeepSeek 请求；当前机器可直连，`DEEPSEEK_PROXY_URL` 保持空值，Supabase 不受影响。
+- 未配置 DeepSeek key 时返回 `AI_NOT_CONFIGURED`；没有 mock 成功分支。402 余额不足、401 认证失败、429 限流和 400/422 参数拒绝分别给出中文提示。
 
-参考：[Responses Structured Outputs 官方文档](https://developers.openai.com/api/docs/guides/structured-outputs?api-mode=responses)、[默认模型官方文档](https://developers.openai.com/api/docs/models/gpt-6.1-sol)、[错误码说明](https://developers.openai.com/api/docs/guides/error-codes)。模型读取已成功，但余额恢复后仍需补完真实生成 smoke test。
+参考：[DeepSeek 接入说明](https://api-docs.deepseek.com/)、[Responses 结构化输出](https://api-docs.deepseek.com/api/create-response/)、[模型说明](https://api-docs.deepseek.com/quick_start/pricing/)、[错误码](https://api-docs.deepseek.com/quick_start/error_codes/)。
 
 ## Schema 和一致性
 
@@ -48,14 +49,14 @@ Schema 使用严格对象，禁止未知字段，限制所有字符串与数组�
 
 | 接口 | 行为 |
 | --- | --- |
-| `POST /api/ai/novels/build` | Session → 同源/体积检查 → 输入校验 → 配置检查 → 限流/唯一 requestId → OpenAI → 结构与一致性校验 → 完成元数据 → 返回 Preview |
+| `POST /api/ai/novels/build` | Session → 同源/体积检查 → 输入校验 → 配置检查 → 限流/唯一 requestId → DeepSeek → 结构与一致性校验 → 完成元数据 → 返回 Preview |
 | `POST /api/novels/ai-confirm` | 再鉴权 → 严格 payload/schema/一致性校验 → 校验原始输入摘要 → 关系字段映射 → 事务 RPC → 返回 novelId |
 
 预览使用分区卡片、人物资料和阶段列表，不直接展示 JSON。可编辑书名、简介、核心设定、冲突、结局。复杂数组当前只读。重新生成明确提示替换整份预览、再次产生调用，失败保留原预览与修改；取消需确认，不改动已保存小说。
 
 等待动画说明自己是单次请求的等待提示，不虚称多个独立子任务已完成。页面与服务端同时防重；账号就绪后才展示表单，切换账号卸载旧预览。预览只在当前页面内存，未确认时离开有浏览器提示，刷新仍可能丢失。确认成功后拉取完整聚合再跳转，无需手动刷新。
 
-缺少 key、OpenAI 401/403/429、超时、网络失败、模型不可用、拒绝、结构异常、session 失效、数据库失败均有中文提示。日志仅保留问题编号、错误类别和 provider request ID，不输出密钥、Prompt、SQL 或完整内部错误。数据库失败可用同一预览安全重试。
+缺少 key、DeepSeek 401/402/403/429、超时、网络失败、模型不可用、拒绝、结构异常、session 失效、数据库失败均有中文提示。日志仅保留问题编号、错误类别和 provider request ID，不输出密钥、Prompt、SQL 或完整内部错误。数据库失败可用同一预览安全重试。
 
 ## 数据库设计与映射
 
@@ -87,10 +88,11 @@ Schema 使用严格对象，禁止未知字段，限制所有字符串与数组�
 
 | 验收 | 结果 |
 | --- | --- |
-| 17 组 AI/数据库测试 | 通过：4 题材 × 100/300/800 章、SDK 结构输出、输入/一致性、真实 SDK 错误类型与 request ID、余额/用量错误、两 API 鉴权、事务回滚、幂等、A/B 权限、租约与限流 |
+| 19 组 AI/数据库测试 | 通过：4 题材 × 100/300/800 章、DeepSeek Responses JSON Schema、字段与一致性、无 OpenAI 凭据回退、空/截断/无效输出、SDK 错误和 402 余额、两 API 鉴权、事务回滚、幂等、A/B 权限、租约与限流 |
 | 隔离浏览器流程 | 11 组通过：完整流程、重新生成失败保留修改、移动端、保存失败重试、完整 Bible/各页面、B 越权、取消、429/异常结构、手动创建、脚本就绪前登录保护 |
 | 真实 Supabase + 测试方案浏览器 | 6 组通过：真实缺密钥错误、预览不建书、修改确认、关系表/各页面、重复确认、B 不能读取或确认 A |
-| 真实 OpenAI smoke test | **已尝试、未通过：直连超时已修复；真实生成返回 429，最小诊断请求确认 credit_balance_exhausted；没有真实方案落库** |
+| 真实 DeepSeek smoke test | **5 组通过：真实生成、修改确认、关系表与各页面、并发重复确认、真实 A/B 隔离；errors=[]** |
+| 历史 OpenAI smoke test | 先前被 429 余额不足阻塞；当前已切换 DeepSeek，不再使用 OpenAI 生成 |
 | 原有数据库 / Repository | 通过 |
 | 原有真实 SDK 数据库回归 | 9 组通过，未破坏保存、CAS、来源与级联 |
 | 原有真实浏览器回归 | 14 组全部通过，console / hydration / 非预期 HTTP 错误为 0 |
@@ -98,8 +100,16 @@ Schema 使用严格对象，禁止未知字段，限制所有字符串与数组�
 
 已保存一部清晰命名为 `Phase 3A 样例验收 · 2026-10-09` 的测试小说，归 A 测试账号，UUID 为 `f8db9149-d1e6-4c53-a33c-78376bde8808`。其内容来自固定样例，不是模型真实生成。
 
+本次另外保存 `Phase 3A 真实 AI验收 · 2026-10-09`，归 A 测试账号，UUID 为 `62812089-862b-4292-a1c0-4fc7e6cdb565`。其内容由 DeepSeek 实际生成，测试中人为修改了书名和结局以验收编辑保存。生成 ID 为 `d7d5ed36-7279-476c-9dc8-bc8a10a9fc52`，模型 `deepseek-flash`，输入 4792 tokens，输出 13866 tokens，生成请求约 72 秒。
+
+质量抽查：都市职业成长，主角林越；9 个人物、10 个连续覆盖 1–100 章的故事阶段、25 条初始记忆，没有超能力系统。人物有独立目标，冲突从岗位生存、团队创业推进到产品与组织成长，记忆记录开篇身份与边界。此项只证明一个真实都市样本；其他题材与更长篇幅仍只有结构样例测试，不是百万字正文连续生成验收。
+
 主要证据：
 
+- `artifacts/phase3a/deepseek-configuration-check.json`，真实 DeepSeek 认证和模型访问通过
+- `artifacts/phase3a/browser-cloud-2026-10-09T07-36-04-443Z/results.json`，5 组真实 DeepSeek + Supabase 浏览器验收通过，errors=[]
+- `artifacts/phase3a/browser-fixture-2026-10-09T07-36-00-839Z/results.json`，11 组最终 DeepSeek 接口的隔离浏览器验收通过，errors=[]
+- `artifacts/phase3a/deepseek-quality-review.json`，本次真实样本的人物、阶段与记忆抽查
 - `artifacts/phase3a/openai-configuration-check.json`，密钥/模型访问成功，真实生成被余额耗尽阻塞；仅保存安全状态信息
 - `artifacts/phase3a/browser-fixture-2026-10-09T06-51-57-650Z/results.json`，代理配置修复后 11 组浏览器回归通过，包含余额不足提示；errors=[]，未调用真实 OpenAI
 - `artifacts/phase3a/unit-database.json`
@@ -131,7 +141,7 @@ npm run test:browser:cloud -- --allow-cloud-test-writes
 npm run test:browser:ai:cloud -- --allow-cloud-test-writes
 ```
 
-本机密钥、模型与代理现已配置。补充 OpenAI API 余额后，下面一条命令会真正请求一次 OpenAI，并验证修改、确认、各表与账号隔离：
+本机 DeepSeek 密钥与模型已配置，直连可用。下面一条命令会真正请求一次 DeepSeek，并验证修改、确认、各表与账号隔离；需要 DeepSeek API 可用余额：
 
 ```sh
 npm run test:ai:smoke -- --allow-cloud-test-writes
@@ -144,7 +154,7 @@ npm run test:ai:smoke -- --allow-cloud-test-writes
 ```text
 src/lib/ai/
   config.js                 模型、超时与体积上限
-  openai.js                 server-only 官方客户端
+  deepseek.js               server-only DeepSeek 兼容客户端
   errors.js                 中文错误与安全日志
   route-handler.js          两接口共有鉴权/同源处理
   schemas/novel-builder-schema.js
@@ -164,7 +174,7 @@ src/styles/novel-builder.css
 supabase/migrations/003_ai_novel_builder.sql
 scripts/test-ai.mjs
 scripts/testing/{novel-builder-fixtures,register-server,browser-ai-builder,browser-ai-cloud}.mjs
-scripts/testing/openai-fixture-preload.cjs
+scripts/testing/provider-fixture-preload.cjs
 ```
 
 其余修改：`.env.example`、`package.json`/lock、框架生成的 `AGENTS.md` 标题级别、`src/app/globals.css`、`overview-view.js`、`outline-view.js`、`world-view.js`、`src/components/auth/auth-form.js`、`src/styles/auth.css`、`src/lib/domain/memory.js`、`src/lib/server/{supabase-repository,ai-service}.js`、`scripts/test-security.mjs`、已有 `supabase-fixture.mjs`/`browser-cloud.mjs`、README、ARCHITECTURE、SUPABASE_SETUP 与本文。
@@ -173,18 +183,18 @@ scripts/testing/openai-fixture-preload.cjs
 
 ## 当前限制与后续
 
-1. 阻塞真实验收：OpenAI API 返回余额耗尽。密钥和模型读取已成功，真实生成耗时、token 消耗和四题材实际输出质量尚未验证。不要据样例测试宣称真实生成已通过；不自动重试余额错误。
+1. 一个真实 DeepSeek 都市方案已通过。其他题材及 300/800 章的覆盖仍是离线结构测试；不将样例测试解释为真实生成质量保证。API 余额和可用性由 DeepSeek 账户决定，余额不足时明确报错，不自动重试。
 2. 未确认预览保存在内存；刷新丢失后需要重新生成，可能再次计费。生产部署需支持约 4–5 分钟请求，平台超时过短应先改任务队列，不扩大本次范围。
 3. 列表仍读取旧聚合（含正文），百万字规模前应优化为轻量列表与按章节读取；本阶段没有假装完成百万字连续生成。
 4. 依赖兼容更新后的锁文件使用 Next 16.4.0；`npm audit --omit=dev` 为 0 漏洞。开发依赖仍有 5 个 high 条目，来自同一 braces→micromatch→fast-glob→Next ESLint 链；现有自动修复建议会降级 ESLint 配置到 Next 14，故未强行采用。需跟进开发工具链上游修复。
-5. 当前停止在 Phase 3A。先补一次真实端到端验收并审阅生成质量，再确定 Phase 3B 的宏观阶段展开/详细大纲范围；不提前编写正文、连续写作或长期记忆自动更新。
+5. 当前停止在 Phase 3A。真实构建、保存与基础质量抽查已完成；后续再确定 Phase 3B 的宏观阶段展开/详细大纲范围，不提前编写正文、连续写作或长期记忆自动更新。
 
 ## 最终交付记录
 
-`npm run dev` 正常运行；`lint`、`build`、原有 DB/Repository、17 组 AI 测试、11 组隔离浏览器、6 组真实 Supabase 样例浏览器、9 组原有云端数据库和 14 组旧浏览器回归通过。所有成功浏览器报告 errors=[]；预期的 401/404/429/503 负面用例单独识别。001/002 校验值保持原样，003 已真实部署。
+本次 `lint`、`build`、19 组 AI/数据库测试、11 组隔离浏览器、5 组真实 DeepSeek + Supabase 浏览器验收通过。此前原有 DB/Repository、6 组真实 Supabase 样例浏览器、9 组原有云端数据库和 14 组旧浏览器回归保持为历史证据。本次成功浏览器报告 errors=[]；预期的 401/402/404/429/503 用例单独识别，不修改数据库迁移或已有业务数据。
 
 Git 交付标题为 `Phase 3A: add AI novel builder`，目标 `https://github.com/Shawn8877/Writter` 的 `main`；本地密钥、账号、CLI 和 artifacts 不提交。具体提交编号与远端校验以交付回复为准。
 
-配置跟进（2026-10-09）：密钥与模型读取验证成功；补充可选服务端代理，修复真实 SDK 连接/超时类型及 `requestID` 读取，并区分余额耗尽与用量上限。实际尝试生成时得到 429；最小 16 输出 token 诊断请求确认 `credit_balance_exhausted` 后停止请求。没有用固定样例冒充成功，没有创建新的真实 AI 小说。
+历史配置跟进（2026-10-09）：OpenAI 密钥与模型读取成功，但生成被余额耗尽阻塞。用户随后要求切换 DeepSeek。DeepSeek 首次普通 JSON 方案未通过完整性校验，未落库；最终接法使用 DeepSeek Responses 原生 JSON Schema，并成功完成真实生成和保存。失败请求没有被掩盖，也没有用样例替代成功结果。
 
-**AI代码完成，但真实API smoke test 受余额不足阻塞。NOT READY FOR PHASE 3B。** 余额恢复后继续一次真实生成、落库和质量审阅；未提前实现下一阶段功能。
+**本次 DeepSeek 切换验收通过，Phase 3A 的真实生成与保存链路已打通。** 未开始 Phase 3B，章节正文与持续写作仍是后续功能。

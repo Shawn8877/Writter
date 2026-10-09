@@ -17,5 +17,5 @@ forbiddenChanges 记录不可随意改动的规则。能力必须有规则、限
 全部用中文；genre 必须等于输入 genre。字段精练具体，人物字段通常 30～80 字、阶段字段通常 30～100 字，避免重复，留出后续连载拓展空间。年龄、性别等不适用时写明“不适用/待定”而非空白。`;
 
 export function builderMessages(input) {
-  return [{ role: "system", content: NOVEL_BUILDER_PROMPT }, { role: "user", content: JSON.stringify(input) }];
+  return [{ role: "system", content: `${NOVEL_BUILDER_PROMPT}\n只输出符合指定 JSON Schema 的完整 json 对象，不要 Markdown 代码围栏、解释或省略号。提交前核对所有 required 字段、数组数量、姓名引用和阶段覆盖。` }, { role: "user", content: JSON.stringify(input) }];
 }

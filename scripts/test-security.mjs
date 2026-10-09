@@ -12,6 +12,7 @@ assert.equal(git("check-ignore", ".tools/cloud-test-accounts.json"), ".tools/clo
 const sensitiveValues = [];
 nextEnv.loadEnvConfig(process.cwd(), true, { info() {}, error() {} });
 if (process.env.OPENAI_API_KEY?.trim()) sensitiveValues.push(process.env.OPENAI_API_KEY.trim());
+if (process.env.DEEPSEEK_API_KEY?.trim()) sensitiveValues.push(process.env.DEEPSEEK_API_KEY.trim());
 try {
   const accounts = JSON.parse(await readFile(".tools/cloud-test-accounts.json", "utf8"));
   for (const actor of [accounts.a, accounts.b]) if (actor?.password) sensitiveValues.push(actor.password);
@@ -19,7 +20,7 @@ try {
 const patterns = [
   ["Supabase management token", /sbp_[a-f0-9]{30,}/],
   ["Supabase secret key", /sb_secret_[A-Za-z0-9_-]{20,}/],
-  ["OpenAI secret key", /\bsk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{20,}/],
+  ["AI provider secret key", /\bsk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{20,}/],
   ["Database URL with password", /postgres(?:ql)?:\/\/[^\s/:]+:[^\s/@]{4,}@/],
 ];
 const issues = [];

@@ -9,19 +9,24 @@ import { buildNovelPlan } from "../src/lib/ai/services/novel-builder-service.js"
 import { mapNovelBundle } from "../src/lib/ai/services/novel-bundle-mapper.js";
 import { generatePreview, confirmNovelPlan, inputHash } from "../src/lib/ai/services/builder-workflow.js";
 import { getAiConfig } from "../src/lib/ai/config.js";
+import { createDeepSeekClient } from "../src/lib/ai/deepseek.js";
 import { normalizeAiError } from "../src/lib/ai/errors.js";
 import { createBuilderHandler } from "../src/lib/ai/route-handler.js";
 
 const results = [];
 async function check(name, run) { await run(); results.push(name); console.log(`PASS: ${name}`); }
-const config = { model: "gpt-6.1-sol", maxOutputTokens: 24000 };
-const clientFor = (body, inspect = () => {}) => new OpenAI({ apiKey: "fixture-only", maxRetries: 0, fetch: async (url, options) => { inspect(url, JSON.parse(options.body)); return Response.json(body, { headers: { "x-request-id": "req_fixture_only" } }); } });
+const config = { model: "deepseek-flash", maxOutputTokens: 24000 };
+const clientFor = (body, inspect = () => {}) => {
+  const client = createDeepSeekClient({ ...config, apiKey: "fixture-only", timeoutMs: 1000 });
+  client.fetch = async (url, options) => { inspect(url, JSON.parse(options.body), options); return Response.json(body, { headers: { "x-request-id": "req_fixture_only" } }); };
+  return client;
+};
 const input = builderInput();
-await check("4 genres × 100/300/800 chapters validate through actual SDK Structured Outputs", async () => {
+await check("4 genres × 100/300/800 chapters use DeepSeek Responses schema output and server validation", async () => {
   for (const genre of ["都市", "玄幻", "悬疑", "言情"]) for (const count of [100, 300, 800]) {
     const input = builderInput(genre, count); const fixture = novelPlan(input);
     const result = await buildNovelPlan(input, { config, client: clientFor(responseFixture(fixture), (url, body) => {
-      assert.equal(String(url), "https://api.openai.com/v1/responses"); assert.equal(body.text.format.type, "json_schema"); assert.equal(body.text.format.strict, true); assert.equal(body.store, false); assert.equal(body.max_output_tokens, 24000); assert.equal(body.model, "gpt-6.1-sol"); assert.equal(body.text.format.schema.additionalProperties, false); assert.equal(body.input[1].role, "user");
+      assert.equal(String(url), "https://api.deepseek.com/responses"); assert.equal(body.text.format.type, "json_schema"); assert.equal(body.text.format.strict, true); assert.equal(body.text.format.schema.additionalProperties, false); assert.equal(body.reasoning.effort, "low"); assert.equal(body.stream, false); assert.equal(body.max_output_tokens, 24000); assert.equal(body.model, "deepseek-flash"); assert.equal(body.input[1].role, "user"); assert.equal(JSON.parse(body.input[1].content).targetChapterCount, count); assert.ok(body.input[0].content.includes("JSON Schema")); assert.equal(body.store, undefined);
     }) });
     assert.equal(result.plan.storyStages.at(-1).approxEndChapter, count); assert.equal(result.plan.powerSystem.enabled, genre === "玄幻"); assert.equal(result.inputTokens, 1200); assert.equal(result.providerRequestId, "req_fixture_only");
   }
@@ -53,9 +58,37 @@ await check("provider errors are translated without leaking internal messages", 
   await assert.rejects(buildNovelPlan(input, { config, client: clientFor(missing) }), (e) => e.code === "INVALID_AI_OUTPUT");
 });
 await check("missing key fails honestly before database reservation or provider call", async () => {
-  const previous = process.env.OPENAI_API_KEY; delete process.env.OPENAI_API_KEY;
+  const previous = process.env.DEEPSEEK_API_KEY; delete process.env.DEEPSEEK_API_KEY;
   try { assert.throws(getAiConfig, (e) => e.code === "AI_NOT_CONFIGURED"); await assert.rejects(generatePreview({ rpc: () => assert.fail("must not reserve") }, { requestId: randomUUID(), input }), (e) => e.code === "AI_NOT_CONFIGURED"); }
-  finally { if (previous !== undefined) process.env.OPENAI_API_KEY = previous; }
+  finally { if (previous !== undefined) process.env.DEEPSEEK_API_KEY = previous; }
+});
+await check("DeepSeek configuration never falls back to old OpenAI keys or proxies", async () => {
+  const names = ["DEEPSEEK_API_KEY", "DEEPSEEK_MODEL", "DEEPSEEK_PROXY_URL", "OPENAI_API_KEY", "OPENAI_MODEL", "OPENAI_PROXY_URL"];
+  const before = Object.fromEntries(names.map((name) => [name, process.env[name]]));
+  try {
+    names.forEach((name) => delete process.env[name]);
+    process.env.OPENAI_API_KEY = "old-provider-fixture"; process.env.OPENAI_PROXY_URL = "http://127.0.0.1:1";
+    assert.throws(getAiConfig, (e) => e.code === "AI_NOT_CONFIGURED");
+    process.env.DEEPSEEK_API_KEY = "deepseek-fixture";
+    const settings = getAiConfig(); assert.equal(settings.apiKey, "deepseek-fixture"); assert.equal(settings.model, "deepseek-flash"); assert.equal(settings.proxyUrl, undefined);
+    const client = createDeepSeekClient(settings);
+    client.fetch = async (url, options) => {
+      assert.equal(new URL(url).origin, "https://api.deepseek.com"); assert.equal(new Headers(options.headers).get("authorization"), "Bearer deepseek-fixture");
+      return Response.json(responseFixture(novelPlan(input)));
+    };
+    await buildNovelPlan(input, { config: settings, client });
+  } finally { for (const name of names) { if (before[name] === undefined) delete process.env[name]; else process.env[name] = before[name]; } }
+});
+await check("DeepSeek empty, oversized, fenced or semantically invalid JSON never becomes a preview", async () => {
+  const wrong = novelPlan(input); wrong.storyStages[1].approxStartChapter = 1;
+  for (const content of [null, "", "   ", "{}", "[]", "```json\n{}\n```", "x".repeat(500001), JSON.stringify(wrong)]) {
+    const response = responseFixture(novelPlan(input)); response.output[0].content[0].text = content;
+    await assert.rejects(buildNovelPlan(input, { config, client: clientFor(response) }), (e) => e.code === "INVALID_AI_OUTPUT" && e.metadata.inputTokens === 1200);
+  }
+  for (const status of ["incomplete", "failed", "in_progress"]) {
+    const response = responseFixture(novelPlan(input)); response.status = status;
+    await assert.rejects(buildNovelPlan(input, { config, client: clientFor(response) }), (e) => e.code === "AI_INCOMPLETE");
+  }
 });
 await check("real SDK connection, timeout and HTTP errors retain safe classification and request IDs", async () => {
   for (const [failure, code] of [
@@ -67,7 +100,9 @@ await check("real SDK connection, timeout and HTTP errors retain safe classifica
   }
   const client = new OpenAI({ apiKey: "fixture-only", maxRetries: 0, fetch: async () => Response.json({ error: { message: "private provider detail", code: "invalid_api_key" } }, { status: 401, headers: { "x-request-id": "req_sdk_auth" } }) });
   await assert.rejects(buildNovelPlan(input, { config, client }), (error) => error.code === "AI_AUTH_ERROR" && error.providerRequestId === "req_sdk_auth" && !error.message.includes("private"));
-  for (const [providerCode, code] of [["credit_balance_exhausted", "AI_CREDITS_EXHAUSTED"], ["project_spend_limit_exceeded", "AI_QUOTA_EXCEEDED"], ["organization_spend_limit_exceeded", "AI_QUOTA_EXCEEDED"], ["organization_usage_limit_exceeded", "AI_QUOTA_EXCEEDED"], ["insufficient_quota", "AI_QUOTA_EXCEEDED"]]) {
+  const emptyBalanceClient = new OpenAI({ apiKey: "fixture-only", maxRetries: 0, fetch: async () => Response.json({ error: { message: "private billing detail" } }, { status: 402, headers: { "x-request-id": "req_sdk_balance" } }) });
+  await assert.rejects(buildNovelPlan(input, { config, client: emptyBalanceClient }), (e) => e.code === "AI_CREDITS_EXHAUSTED" && e.status === 402 && e.message.includes("DeepSeek") && e.providerRequestId === "req_sdk_balance");
+  for (const [providerCode, code] of [["insufficient_quota", "AI_QUOTA_EXCEEDED"]]) {
     const client = new OpenAI({ apiKey: "fixture-only", maxRetries: 0, fetch: async () => Response.json({ error: { message: "private billing detail", code: providerCode, type: "insufficient_quota" } }, { status: 429, headers: { "x-request-id": "req_sdk_quota" } }) });
     await assert.rejects(buildNovelPlan(input, { config, client }), (error) => error.code === code && error.status === 429 && error.providerRequestId === "req_sdk_quota" && !error.message.includes("private"));
   }

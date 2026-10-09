@@ -29,8 +29,8 @@ export const storyStageSchema = object({
   characterGrowth: text(), stakes: text(), turningPoint: text(), endingHook: text(),
 });
 
-// This is the exact schema sent through Responses Structured Outputs. Cross-field
-// semantics are checked separately, so the JSON Schema stays SDK-compatible.
+// Send the JSON Schema through DeepSeek Responses structured output. Independently
+// validate every field and cross-field constraint again before returning a preview.
 export const novelBuilderSchema = object({
   title: text(80), alternativeTitles: z.array(text(80)).min(2).max(4), synopsis: text(2000), shortPitch: text(200),
   genre: text(40), subgenres: list(4), targetAudience: text(200), tone: text(200), writingStyle: text(500),
@@ -61,6 +61,8 @@ export const novelBuilderSchema = object({
   romanceDirection: text(1000), endingDirection: text(1200), forbiddenChanges: z.array(text()).min(3).max(12),
   seedMemories: z.array(object({ type: z.enum(MEMORY_TYPES), title: text(100), content: text(1000), importance: z.number().int().min(1).max(5), characterNames: z.array(text(40)).max(10) })).min(10).max(30),
 });
+
+export const novelBuilderJsonSchema = z.toJSONSchema(novelBuilderSchema);
 
 export function parseNovelPlan(value, input) {
   const plan = novelBuilderSchema.parse(value);

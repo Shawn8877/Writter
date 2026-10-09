@@ -20,9 +20,9 @@ NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-public-key
 ```
 
-手动创作只需要 Supabase 公开配置，不需要 service role key。AI 构建另需在服务器 `.env.local` 设置 `OPENAI_API_KEY` 和 `OPENAI_MODEL=gpt-6.1-sol`；后者可换成支持 Responses + Structured Outputs 的可用模型。密钥不能放入 `NEXT_PUBLIC_*` 或 Git，`.env.example` 中变量均为空。若服务器需要 HTTP(S) 代理，可设置仅供 OpenAI 使用的 `OPENAI_PROXY_URL`；未设置时保持直连，Supabase 和浏览器不受影响。本机使用已有的本地代理，代理程序需保持运行；部署服务器时按其网络情况填写或留空。
+手动创作只需要 Supabase 公开配置，不需要 service role key。AI 构建使用 **DeepSeek**，需在服务器 `.env.local` 设置 `DEEPSEEK_API_KEY` 和 `DEEPSEEK_MODEL=deepseek-flash`。密钥不能放入 `NEXT_PUBLIC_*` 或 Git，`.env.example` 中变量均为空。可选 `DEEPSEEK_PROXY_URL` 仅用于 DeepSeek 请求；本机可直连，保持空值即可。原有 `OPENAI_*` 配置不再被应用读取，不会自动回退到 OpenAI。
 
-**Phase 3A 状态（2026-10-09）：AI Novel Builder 代码与测试流程完成；密钥和模型访问已验证，真实生成被 OpenAI API 余额不足阻塞。** 已实际尝试 smoke test，服务返回 `429 / credit_balance_exhausted`，尚未获得真实生成方案。目前已验证 Structured Outputs 的 SDK 测试、预览修改、事务保存、幂等和真实 Supabase 账号隔离。当前项目已应用 003 迁移，原有 Phase 2.5 数据保留。完整结果及剩余限制见 [Phase 3A 报告](docs/PHASE_3A.md)。
+**Phase 3A 已切换到 DeepSeek 并通过真实生成验收（2026-10-09）。** 采用 DeepSeek Responses 的 JSON Schema 结构化输出，服务端继续严格校验人物、世界、故事阶段与记忆。19 组 AI/数据库检查、11 组隔离网页流程、5 组真实 DeepSeek + Supabase 验收通过；一个都市方案完成预览修改、确认保存和账号隔离验证，详见 [Phase 3A 报告](docs/PHASE_3A.md)。既有 UI、003 数据库结构及 Phase 2.5 数据保留。
 
 ## 已实现
 
@@ -71,7 +71,7 @@ npm start
 
 两个数据测试通过 PGlite 执行真实 PostgreSQL 迁移与 RLS，不依赖外部密钥，也不改线上数据。浏览器联调使用可选的本地测试服务；运行方式和验收范围见 [第二阶段报告](docs/PHASE_2.md)。本地验证不能替代真实 Supabase 项目的邮件、会话刷新和部署验证。
 
-AI 测试不调用收费接口。`npm run test:browser:ai` 使用独立的 SQL/Auth/OpenAI 测试服务；`npm run test:browser:ai:cloud -- --allow-cloud-test-writes` 使用明确标注的方案样例和真实 Supabase。两者均需 Playwright + Chrome，可通过 `PLAYWRIGHT_MODULE` 指向已有 Playwright。配置密钥并重启网站后，可显式运行 `npm run test:ai:smoke -- --allow-cloud-test-writes`，仅构建一次真实方案并验收保存；操作前阅读 [验收配置和范围](docs/PHASE_3A.md)。
+AI 测试不调用收费接口。`npm run test:browser:ai` 使用独立的 SQL/Auth/DeepSeek 响应样例；`npm run test:browser:ai:cloud -- --allow-cloud-test-writes` 使用明确标注的方案样例和真实 Supabase。两者均需 Playwright + Chrome，可通过 `PLAYWRIGHT_MODULE` 指向已有 Playwright。配置 DeepSeek 密钥并重启网站后，可显式运行 `npm run test:ai:smoke -- --allow-cloud-test-writes`，仅构建一次真实 DeepSeek 方案并验收保存；操作前阅读 [验收配置和范围](docs/PHASE_3A.md)。
 
 真实项目另提供 `npm run test:cloud -- --allow-cloud-test-writes`，需要独立测试项目和两个真实测试账号；准备方式见 [云端验收脚本说明](docs/SUPABASE_SETUP.md#8-真实双账号-sdk-验收脚本)。该脚本会创建并保留 A/B 样本，仅删除本次创建的级联测试小说；它不能代替跨浏览器、断网草稿和自动保存界面验收。
 

@@ -1,5 +1,5 @@
-// Entire browser workflow with isolated Auth/SQL + explicit OpenAI transport
-// fixtures. No real API key is read, no request is sent to OpenAI.
+// Entire browser workflow with isolated Auth/SQL + explicit DeepSeek transport
+// fixtures. No real API key is used and no provider receives a request.
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
@@ -14,19 +14,19 @@ const port = Number(process.env.AI_BROWSER_TEST_PORT || 43020);
 const base = `http://127.0.0.1:${port}`;
 const folder = `artifacts/phase3a/browser-fixture-${new Date().toISOString().replace(/[:.]/g, "-")}`;
 await mkdir(folder, { recursive: true });
-const report = { scope: "browser + Responses SDK with explicit OpenAI fixture + PGlite SQL; NOT real OpenAI or hosted Supabase", checks: [], errors: [], status: "running" };
+const report = { scope: "browser + DeepSeek Responses schema fixture + PGlite SQL; NOT real AI or hosted Supabase", realDeepSeek: false, checks: [], errors: [], status: "running" };
 const fixture = await startSupabaseFixture({ port: port + 1, appPort: port, quiet: true });
 let providerMode = "success"; let providerCalls = 0;
 const ai = createServer(async (request, response) => {
   assert.equal(request.url, "/responses"); assert.equal(request.headers.authorization, undefined);
   let raw = ""; for await (const chunk of request) raw += chunk;
   const body = JSON.parse(raw); providerCalls++;
-  assert.equal(body.text.format.type, "json_schema"); assert.equal(body.text.format.strict, true);
+  assert.equal(body.text.format.type, "json_schema"); assert.equal(body.text.format.strict, true); assert.equal(body.model, "deepseek-flash"); assert.equal(body.reasoning.effort, "low");
   await new Promise((resolve) => setTimeout(resolve, 400));
   response.setHeader("Content-Type", "application/json"); response.setHeader("x-request-id", "req_browser_fixture");
   if (providerMode === "rate") { response.statusCode = 429; return response.end(JSON.stringify({ error: { type: "rate_limit_error", message: "fixture rate limit" } })); }
-  if (providerMode === "credits") { response.statusCode = 429; return response.end(JSON.stringify({ error: { type: "insufficient_quota", code: "credit_balance_exhausted", message: "fixture empty balance" } })); }
-  const result = responseFixture(novelPlan(JSON.parse(body.input[1].content)));
+  if (providerMode === "credits") { response.statusCode = 402; return response.end(JSON.stringify({ error: { message: "fixture empty balance" } })); }
+  const result = responseFixture(novelPlan(JSON.parse(body.input[1].content)), "deepseek-flash");
   if (providerMode === "refusal") result.output[0].content = [{ type: "refusal", refusal: "fixture refusal" }];
   if (providerMode === "invalid") result.output[0].content[0].text = "{}";
   response.end(JSON.stringify(result));
@@ -35,7 +35,7 @@ await new Promise((resolve) => ai.listen(port + 2, "127.0.0.1", resolve));
 const log = await open(`${folder}/server.log`, "a");
 const child = spawn(process.execPath, ["node_modules/next/dist/bin/next", "dev", "--hostname", "127.0.0.1", "--port", String(port)], {
   cwd: root, windowsHide: true, stdio: ["ignore", log.fd, log.fd],
-  env: { ...process.env, NODE_OPTIONS: `--require "${fileURLToPath(new URL("./openai-fixture-preload.cjs", import.meta.url)).replaceAll("\\", "/")}"`, NOVELAI_TEST_MODE: "1", NOVELAI_OPENAI_FIXTURE: "1", NOVELAI_OPENAI_FIXTURE_URL: `http://127.0.0.1:${port + 2}/responses`, NEXT_PUBLIC_SUPABASE_URL: `http://127.0.0.1:${port + 1}`, NEXT_PUBLIC_SUPABASE_ANON_KEY: "testanon-fixture-only", OPENAI_API_KEY: "fixture-only-never-real", OPENAI_MODEL: "gpt-6.1-sol", OPENAI_PROXY_URL: "" },
+  env: { ...process.env, NODE_OPTIONS: `--require "${fileURLToPath(new URL("./provider-fixture-preload.cjs", import.meta.url)).replaceAll("\\", "/")}"`, NOVELAI_TEST_MODE: "1", NOVELAI_AI_FIXTURE: "1", NOVELAI_AI_FIXTURE_URL: `http://127.0.0.1:${port + 2}/responses`, NEXT_PUBLIC_SUPABASE_URL: `http://127.0.0.1:${port + 1}`, NEXT_PUBLIC_SUPABASE_ANON_KEY: "testanon-fixture-only", DEEPSEEK_API_KEY: "fixture-only-never-real", DEEPSEEK_MODEL: "deepseek-flash", DEEPSEEK_PROXY_URL: "", OPENAI_API_KEY: "", OPENAI_PROXY_URL: "" },
 });
 let browser; let stage = "start"; let expectedFailure = false;
 async function check(name, run) { stage = name; await run(); report.checks.push(name); await writeFile(`${folder}/results.json`, JSON.stringify(report, null, 2)); console.log(`PASS: ${name}`); }
@@ -52,7 +52,7 @@ try {
   const page = await context.newPage();
   page.on("pageerror", (error) => report.errors.push({ stage, message: error.message }));
   page.on("console", (message) => { if (["error", "warning"].includes(message.type()) && !(expectedFailure && message.text().includes("Failed to load resource"))) report.errors.push({ stage, message: message.text() }); });
-  page.on("request", (request) => { if (request.url().includes("api.openai.com")) report.errors.push({ stage, message: "Browser attempted OpenAI request" }); });
+  page.on("request", (request) => { if (["api.openai.com", "api.deepseek.com"].includes(new URL(request.url()).hostname)) report.errors.push({ stage, message: "Browser attempted direct AI provider request" }); });
   page.on("dialog", (dialog) => dialog.type() === "beforeunload" ? dialog.accept() : dialog.dismiss());
   const api = async (path, data, actor = context) => { const r = await actor.request.fetch(base + path, { method: data ? "POST" : "GET", headers: { "Content-Type": "application/json", Origin: base }, data }); return { status: r.status(), data: await r.json() }; };
   const accounts = { a: { email: "builder-a@example.invalid", password: "FixturePasswordForLocalA1!" }, b: { email: "builder-b@example.invalid", password: "FixturePasswordForLocalB2!" } };
@@ -149,7 +149,7 @@ try {
   });
   await check("rate-limit, exhausted credits and invalid structured output are honest errors with no new novel", async () => {
     expectedFailure = true;
-    for (const [mode, message] of [["rate", "AI 服务繁忙或额度不足，请稍后重试。"], ["invalid", "AI 返回的方案不够完整，请重新生成。"], ["credits", "OpenAI API 余额不足，请管理员充值后再试。"]]) {
+    for (const [mode, message] of [["rate", "AI 服务繁忙或额度不足，请稍后重试。"], ["invalid", "AI 返回的方案不够完整，请重新生成。"], ["credits", "DeepSeek API 余额不足，请管理员充值后再试。"]]) {
       providerMode = mode; await page.getByRole("button", { name: "AI 构建小说", exact: true }).click(); await page.getByText(message, { exact: true }).waitFor();
       assert.equal((await api("/api/novels")).data.novels.length, 1);
     }

@@ -4,7 +4,8 @@ import { fetch as proxyFetch, ProxyAgent } from "undici";
 import { getAiConfig } from "./config.js";
 import { AiError } from "./errors.js";
 
-// Reuse proxy connections across requests. Only the OpenAI client uses these.
+// DeepSeek supports the OpenAI SDK wire format. No requests go to OpenAI.
+// Reuse optional proxy connections across requests, independently of Supabase.
 const proxyAgents = new Map();
 
 function proxyOptions(proxyUrl) {
@@ -20,6 +21,6 @@ function proxyOptions(proxyUrl) {
   return { fetch: proxyFetch, fetchOptions: { dispatcher: proxyAgents.get(url.href) } };
 }
 
-export function createOpenAIClient(config = getAiConfig()) {
-  return new OpenAI({ apiKey: config.apiKey, baseURL: "https://api.openai.com/v1", timeout: config.timeoutMs, maxRetries: 0, ...proxyOptions(config.proxyUrl) });
+export function createDeepSeekClient(config = getAiConfig()) {
+  return new OpenAI({ apiKey: config.apiKey, baseURL: "https://api.deepseek.com", timeout: config.timeoutMs, maxRetries: 0, ...proxyOptions(config.proxyUrl) });
 }
