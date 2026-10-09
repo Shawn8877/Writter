@@ -6,7 +6,7 @@
 
 ## 启动
 
-需要 Node.js 20.9+ 和 npm，按锁文件安装：
+需要 Node.js 22.15+（本机验收使用 24.19）和 npm，按锁文件安装：
 
 ```bash
 npm ci
@@ -20,9 +20,9 @@ NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-public-key
 ```
 
-不需要 service role key 或 OpenAI key；不要将真实密钥放入源码或提交到 Git。`.env.example` 仅有占位配置。
+手动创作只需要 Supabase 公开配置，不需要 service role key。AI 构建另需在服务器 `.env.local` 设置 `OPENAI_API_KEY` 和 `OPENAI_MODEL=gpt-6.1-sol`；后者可换成支持 Responses + Structured Outputs 的可用模型。密钥不能放入 `NEXT_PUBLIC_*` 或 Git，`.env.example` 中四个变量均为空。
 
-**Phase 2.5 状态（2026-10-08）：真实 Supabase 数据库与浏览器验收完成。** 沿用原项目和 A/B 账号，恢复暂停数据库；双向 RLS、948 汉字正文持久化、独立浏览器、自动保存、断网草稿、冲突、历史版本及级联删除通过。新增 002 迁移修复托管 API 对版本冲突反复重试的问题。14 组真实浏览器验收无非预期错误。详见 [Phase 2.5 报告](docs/PHASE_2_5.md)，配置和复验方式见 [Supabase 配置](docs/SUPABASE_SETUP.md)。Phase 3 与 OpenAI 尚未开始。
+**Phase 3A 状态（2026-10-09）：AI Novel Builder 代码与测试流程完成，真实 OpenAI smoke test 尚未执行。** 用户选择稍后配置密钥。目前已验证 Structured Outputs 的 SDK 测试、预览修改、事务保存、幂等和真实 Supabase 账号隔离。当前项目已应用 003 迁移，原有 Phase 2.5 数据保留。完整结果及剩余限制见 [Phase 3A 报告](docs/PHASE_3A.md)。
 
 ## 已实现
 
@@ -34,8 +34,10 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-public-key
 - 明确点击“保存版本”创建历史正文，版本记录可查看时间、来源、字数和内容。
 - 记忆中心增删改查，类型、重要度、状态和章节／人物／世界资料来源。
 - 第一阶段浏览器作品可在 Dashboard 明确确认后导入，原存储保持不变。
+- `/create` 从创意构建基础设定：人物、世界、8–12 个宏观故事阶段与 10–30 条初始记忆；预览后确认才原子保存。
+- 预览可修改书名、简介、核心设定、冲突、结局；重新生成需要确认。每个账号同一时间仅一个请求，每小时最多 6 次，重复确认不会多建一本。
 
-**AI 尚未接入。** 所有 AI 按钮继续显示占位提示，没有模型调用、自动总结、Embedding、RAG 或自动连写。版本恢复、密码找回与头像／封面上传未实现。
+**本阶段只开放 AI 基础方案构建接口。** 缺少密钥时明确报错，不返回假方案。章节正文、逐章大纲、自动总结、Embedding、RAG 和连续写作仍未实现。版本恢复、密码找回与头像／封面上传也未实现。
 
 ## 页面
 
@@ -44,9 +46,9 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-public-key
 | `/` | 首页 | 公开 |
 | `/login`、`/register` | 登录、注册 | 公开 |
 | `/dashboard` | 当前账号作品库 | 登录 |
-| `/create` | 创建小说 | 登录 |
+| `/create` | 手动创建 / AI 构建 / 方案预览 | 登录 |
 | `/novel/[id]` | 概览与核心设定 | 小说所有者 |
-| `/novel/[id]/outline` | 总纲、分卷与章节大纲 | 小说所有者 |
+| `/novel/[id]/outline` | 总纲、宏观故事阶段、分卷与章节大纲 | 小说所有者 |
 | `/novel/[id]/characters` | 人物 | 小说所有者 |
 | `/novel/[id]/world` | 世界观、地点、物品、能力、伏笔 | 小说所有者 |
 | `/novel/[id]/timeline` | 时间线 | 小说所有者 |
@@ -61,12 +63,15 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-public-key
 npm run lint
 npm run test:db
 npm run test:repository
+npm run test:ai
 npm run build
 npm run test:security
 npm start
 ```
 
 两个数据测试通过 PGlite 执行真实 PostgreSQL 迁移与 RLS，不依赖外部密钥，也不改线上数据。浏览器联调使用可选的本地测试服务；运行方式和验收范围见 [第二阶段报告](docs/PHASE_2.md)。本地验证不能替代真实 Supabase 项目的邮件、会话刷新和部署验证。
+
+AI 测试不调用收费接口。`npm run test:browser:ai` 使用独立的 SQL/Auth/OpenAI 测试服务；`npm run test:browser:ai:cloud -- --allow-cloud-test-writes` 使用明确标注的方案样例和真实 Supabase。两者均需 Playwright + Chrome，可通过 `PLAYWRIGHT_MODULE` 指向已有 Playwright。配置密钥并重启网站后，可显式运行 `npm run test:ai:smoke -- --allow-cloud-test-writes`，仅构建一次真实方案并验收保存；操作前阅读 [验收配置和范围](docs/PHASE_3A.md)。
 
 真实项目另提供 `npm run test:cloud -- --allow-cloud-test-writes`，需要独立测试项目和两个真实测试账号；准备方式见 [云端验收脚本说明](docs/SUPABASE_SETUP.md#8-真实双账号-sdk-验收脚本)。该脚本会创建并保留 A/B 样本，仅删除本次创建的级联测试小说；它不能代替跨浏览器、断网草稿和自动保存界面验收。
 
@@ -75,6 +80,7 @@ npm start
 正式内容保存在 Supabase；本地草稿是恢复副本，不是云端备份。`localhost` 与 `127.0.0.1` 是不同浏览器来源，请固定一个地址使用。旧作品不会自动上传，需在原来保存作品的浏览器与地址里选择“导入本地作品”。
 
 - [配置 Supabase 与双账号权限验证](docs/SUPABASE_SETUP.md)
+- [Phase 3A 架构、数据库映射、验收与限制](docs/PHASE_3A.md)
 - [Phase 2.5 云端验收状态与待办](docs/PHASE_2_5.md)
 - [第二阶段功能、表结构、变更文件、测试与第三阶段建议](docs/PHASE_2.md)
 - [当前架构与数据约定](docs/ARCHITECTURE.md)

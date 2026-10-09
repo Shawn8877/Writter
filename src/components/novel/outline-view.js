@@ -14,6 +14,7 @@ import {
 import { useNovel } from "./novel-context";
 import { PageHeading, Badge, AiButton, EmptyState } from "@/components/ui";
 import { RecordForm } from "./record-form";
+import { StoryStages } from "@/components/create/novel-plan-preview";
 
 export function OutlineView() {
   const { novel, update } = useNovel();
@@ -79,7 +80,7 @@ export function OutlineView() {
         </span>
       </div>
       <div className="content-tabs" role="group" aria-label="大纲层级">
-        {["小说总纲", "分卷大纲", "章节大纲"].map((item) => (
+        {["小说总纲", ...(novel.outline.storyStages?.length ? ["故事阶段"] : []), "分卷大纲", "章节大纲"].map((item) => (
           <button
             key={item}
             onClick={() => setTab(item)}
@@ -91,6 +92,7 @@ export function OutlineView() {
           </button>
         ))}
       </div>
+      {tab === "故事阶段" && <section className="panel builder-section"><div className="builder-section-content"><h3>长篇故事的宏观规划</h3><p className="builder-muted">AI 构建时确认的故事骨架，详细分卷与逐章规划尚待展开。</p><StoryStages stages={novel.outline.storyStages} /></div></section>}
       {tab === "小说总纲" && (
         <div className="outline-master panel">
           <div className="section-heading">

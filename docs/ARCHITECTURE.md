@@ -16,6 +16,11 @@ Route Handlers → getApiAuth → server-only Supabase Repository
 authRepository → @supabase/ssr Browser Client
 Proxy / Server Client → 认证服务校验与 Cookie 刷新
 章节编辑器 → 按账号、小说、章节、编辑实例隔离的 localStorage 恢复草稿
+
+创建表单 → /api/ai/novels/build → server-only Novel Builder Service
+    → OpenAI Responses.parse + Zod Structured Outputs → 一致性校验 → 预览
+预览修改 → /api/novels/ai-confirm → 再鉴权、校验 → create_ai_novel_bundle
+    → 同一数据库事务创建所有小说资料 → 刷新聚合并进入工作台
 ```
 
 保留第一阶段页面组件、布局、颜色与交互。`src/app` 负责路由装配和服务端入口；组件不直接访问数据库 SDK。小说资源采用聚合仓库适配器，避免为每种表重复编写网络调用；UI 的 camelCase 模型在服务端统一映射为数据库字段。
@@ -26,7 +31,7 @@ Proxy / Server Client → 认证服务校验与 Cookie 刷新
 
 Dashboard、创建页、小说工作台有服务端 layout 保护。小说 layout 先验证 UUID、账号与 novels.user_id。所有数据 API 再独立鉴权，即使绕过页面仍受保护。
 
-数据库开启全部 11 表的 RLS：profiles.id / novels.user_id 对应 auth.uid()；子表沿 novel_id 关联所有者；版本通过 chapter_id → chapters → novels 判断。INSERT/UPDATE 使用 WITH CHECK，阻止伪造归属。应用只使用公开 key 加用户会话，不使用 service role 绕过权限。
+原有 11 表和 Phase 3A 新增的 ai_generation_logs / ai_novel_bundles 共 13 表全部开启 RLS：profiles.id / novels.user_id 对应 auth.uid()；子表沿 novel_id 关联所有者；版本通过 chapter_id → chapters → novels 判断。INSERT/UPDATE 使用 WITH CHECK，阻止伪造归属。应用只使用公开 key 加用户会话，不使用 service role 绕过权限。
 
 业务 RPC 为 SECURITY INVOKER。少量注册、级联维护 trigger 使用受限权限与固定 search_path；应用事务仍校验拥有者和 RLS。来源触发器和复合外键限制跨小说引用，包括同一账号拥有的另一部小说。
 
@@ -35,6 +40,8 @@ Dashboard、创建页、小说工作台有服务端 layout 保护。小说 layou
 ## 数据模型
 
 完整约束、外键、索引、触发器和 policies 位于 `supabase/migrations/001_initial_schema.sql`。`002_phase_2_5_fixes.sql` 修正三个事务 RPC 的冲突 SQLSTATE，不改变数据结构或权限。
+
+`003_ai_novel_builder.sql` 为 Bible 增加 `story_stages` 与少量创作定位 `builder_metadata`，新增受保护的生成元数据与确认回执。人物、世界、记忆仍进入各自正式关系表，不把整个 AI JSON 塞入一列。宏观阶段在大纲页单独展示，不假装已经生成分卷或章节大纲。
 
 - novels 存储基本信息、创作输入、目标、状态和总纲；novel_bible 对 novel_id 唯一。
 - volumes / chapters 使用稳定 UUID，章节有独立 revision；修改其他设定不会让正文自动保存无谓冲突。
@@ -79,13 +86,27 @@ Dashboard、创建页、小说工作台有服务端 layout 保护。小说 layou
 | `/auth/callback` | GET | PKCE 邮件回调 |
 | `/auth/confirm` | GET | token_hash 邮件确认 |
 | `/api/ai` | POST | 鉴权后返回 501，占位且 UI 不调用 |
+| `/api/ai/novels/build` | POST | 生成可编辑预览，仅写生成元数据，不建小说 |
+| `/api/novels/ai-confirm` | POST | 再验证方案，事务保存、幂等返回小说 ID |
+
+## AI 构建的请求与保存边界
+
+模型和限额集中在 `src/lib/ai/config.js`；官方 SDK 客户端、提示词、服务均 `server-only`。Responses 使用 `zodTextFormat` + `responses.parse`，`store:false`，单次输出最多 24000 tokens，240 秒超时，不自动重试收费请求。默认模型 `gpt-6.1-sol`；环境变量可覆盖，实际可用性需真实账号验证。前端没有 SDK、密钥或可选择的代理地址。
+
+输入、输出、确认都由正式 Zod schema 验证；额外检查规范人物引用、主角身份记忆、能力启用与边界、8–12 个连续阶段完整覆盖目标章节。Prompt 将用户创意当作素材，不能覆盖系统规则。自由文本的全部情节逻辑仍需要用户审阅，结构校验不是语义正确性的保证。
+
+生成前用 `studio_begin_ai_generation` 按 auth.uid() 加事务锁，登记唯一 requestId、输入摘要及不可读取的随机 lease_token。每账号一个执行中请求、每小时最多 6 次；5 分钟过期租约防止异常退出永久阻塞。`studio_finish_ai_generation` 必须持有该随机 token 并匹配同一账号，记录状态、模型、usage、耗时和 provider request ID。这两个窄范围 SECURITY DEFINER 函数固定空 search_path、无动态 SQL；普通客户端无权更新/删除日志，不能清空计数绕过限制。日志不存完整 Prompt 或模型正文。
+
+`create_ai_novel_bundle` 为 SECURITY INVOKER，校验生成成功、输入摘要、schema 版本与 auth.uid()，锁住账号+generation ID，依赖现有 RLS 写全部资料。回执在小说删除后保留空引用，不能通过重复确认重新创建。任何子表失败都会回滚整本小说。默认只建立第一卷与空正文的 planned 第一章。
+
+预览只留在当前页面内存；刷新离开提示未保存，账号切换卸载旧预览。生成/确认按钮禁止重复点击，服务器是最终防重边界。错误保留已有预览；重新生成需要明确确认，只有成功后替换。确认成功后立即刷新聚合再导航。没有模拟成功的业务分支；所有替身仅存在于测试目录及测试进程的显式网络注入中。
 
 ## 当前限制与第三阶段边界
 
-Phase 2.5 于 2026-10-08 完成真实 SDK/数据库与 14 组浏览器验收：现有 A/B 登录、Session 刷新、重开与新 Profile 持久化、双向 RLS、自动保存、断网草稿、冲突提示、版本及记忆通过。证据与范围见 [PHASE_2_5.md](PHASE_2_5.md)。正式请求失败不切换本地示例。本次停在 Phase 2.5，未开始 Phase 3，也未进行公网部署或生产邮件投递验收。
+Phase 2.5 的验收记录见 [PHASE_2_5.md](PHASE_2_5.md)。2026-10-09 在原有基础上实现 Phase 3A，已通过测试样例和真实 Supabase 保存链路验收；OpenAI 密钥尚未配置，未完成真实 AI smoke test，当前为 **NOT READY FOR PHASE 3B**。不进行公网部署或生产邮件投递验收。
 
 为了兼容既有页面，作品列表和工作台目前读取完整聚合（含正文），尚不适合大量百万字作品的实际负载。开启 AI 连写前应拆为轻量列表、按章正文读取和版本分页，并加入服务器限流、配额、审计及更大文本的恢复存储。
 
-`src/lib/server/ai-service.js` 仍为 server-only 占位。下一阶段在用户授权后接服务端模型：先核心设定和大纲，再单章生成；保存候选版本，验证记忆变更与来源后提交。API Key 仅用服务端变量，不进 NEXT_PUBLIC_，浏览器不直连模型。
+`src/lib/server/ai-service.js` 仅保留章节/大纲等旧占位契约；真正的 Novel Builder 位于独立 `src/lib/ai`。本次不开放章节生成，不自动提取或更新长期记忆。应先配置密钥验证真实构建质量与保存，再决定 Phase 3B 范围。
 
 本阶段未实现向量库、Embedding、RAG、AI 总结、Agent 或自动连写。测试替身只位于 scripts/testing，生产业务无模拟鉴权开关；NOVELAI_TEST_MODE 仅隔离 Next 构建目录。

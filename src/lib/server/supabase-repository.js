@@ -4,7 +4,7 @@ import { validateNovelInput } from "@/lib/domain/novel";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const novelStatuses = { planning: "构思中", writing: "创作中", completed: "已完结", archived: "已归档" };
 const chapterStatuses = { planned: "待创作", draft: "草稿", generated: "已生成", reviewed: "已校对", final: "已定稿" };
-const worldCategories = { history: "时代背景", rule: "核心规则", organization: "组织势力", other: "其他" };
+const worldCategories = { history: "时代背景", rule: "核心规则", organization: "组织势力", location: "地点", system: "能力体系", concept: "重要概念", faction: "阵营", item: "重要物品", other: "其他" };
 const memoryGroups = { locations: "location", items: "item", abilities: "ability", foreshadowing: "foreshadowing" };
 const foreshadowingStatuses = { active: "未回收", resolved: "已回收", obsolete: "已失效" };
 const reverse = (map, value, fallback) => Object.keys(map).find((key) => map[key] === value) || (Object.hasOwn(map, value) ? value : fallback);
@@ -66,7 +66,8 @@ function modelFromRows(data) {
     cover: row.cover_theme, coverUrl: row.cover_url, revision: row.revision, isDemo: false, ...stamps(row),
     stats: { chapterCount: chapters.length, wordCount: chapters.reduce((sum, chapter) => sum + chapter.wordCount, 0) },
     bible: { id: bible.id, synopsis: bible.synopsis || "", conflict: bible.main_conflict || "", storyline: bible.storyline || "", antagonist: bible.antagonist || "", romance: bible.romance_direction || "", corePremise: bible.core_premise || "", worldRules: bible.world_rules || [], storyTone: bible.story_tone || "", writingStyle: bible.writing_style || "", protagonistArc: bible.protagonist_arc || "", powerSystem: bible.power_system || "", endingDirection: bible.ending_direction || "", forbiddenChanges: bible.forbidden_changes || [] },
-    outline: { master: row.master_outline, volumes: data.volumes.map((item) => ({ id: item.id, title: item.title, summary: item.summary, range: item.chapter_range, beats: item.beats, status: item.status, ...stamps(item) })) },
+    builderMetadata: bible.builder_metadata || {},
+    outline: { master: row.master_outline, storyStages: bible.story_stages || [], volumes: data.volumes.map((item) => ({ id: item.id, title: item.title, summary: item.summary, range: item.chapter_range, beats: item.beats, status: item.status, ...stamps(item) })) },
     chapters,
     characters: data.characters.map((item) => ({ id: item.id, name: item.name, aliases: item.aliases, role: item.role, gender: item.gender, age: item.age, description: item.description, personality: item.personality, appearance: item.appearance, background: item.background, motivation: item.goals, relationships: item.relationships, abilities: item.abilities, currentState: item.current_state, state: typeof item.current_state === "string" ? item.current_state : item.current_state?.description || "", traits: item.traits, color: item.color, initials: item.name.slice(-1), sourceChapterId: item.first_appearance_chapter_id, isAlive: item.is_alive, ...stamps(item) })),
     world: data.world_entries.map((item) => ({ id: item.id, title: item.name, body: item.content, category: item.metadata?.categoryLabel || worldCategories[item.category] || item.category, categoryCode: item.category, metadata: item.metadata, sourceChapterId: item.chapter_id, ...stamps(item) })),

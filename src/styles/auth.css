@@ -26,6 +26,7 @@
 .auth-card h2 { font-size: 26px; font-weight: 500; margin-top: 12px; }
 .auth-card-subtitle { color: var(--muted); font-size: 13px; margin: 10px 0 28px; }
 .auth-card .field { margin-bottom: 19px; }
+.auth-fields { margin: 0; padding: 0; border: 0; min-width: 0; }
 .auth-notice { border: 1px solid #edbc7e36; background: #edbc7e09; padding: 13px 15px; border-radius: 8px; font-size: 13px; line-height: 1.85; margin-bottom: 24px; color: var(--muted); }
 .auth-notice strong { color: var(--gold); font-weight: 500; }
 .auth-notice p { margin-top: 6px; }

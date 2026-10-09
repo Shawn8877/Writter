@@ -23,7 +23,10 @@ import {
   validateNovelInput,
 } from "@/lib/domain/novel";
 import { useStudio } from "@/components/studio-provider";
-import { Field, Modal } from "@/components/ui";
+import { Field, LoadingState } from "@/components/ui";
+import { useNovelBuilder } from "./use-novel-builder";
+import { NovelPlanPreview } from "./novel-plan-preview";
+import { BuilderError, BuilderStatus } from "./builder-status";
 
 const initial = {
   genre: "玄幻",
@@ -33,15 +36,22 @@ const initial = {
   targetChapters: "300",
   wordsPerChapter: "2700",
   protagonist: "",
+  audience: "", pace: "", romanceLevel: "", darknessLevel: "", specialRequirements: "",
 };
 
 export function CreateNovelForm() {
+  const { user, ready } = useStudio();
+  if (!ready) return <LoadingState />;
+  if (!user) return <main className="create-page page-container"><p>请登录后开始创作。</p><Link className="button button-primary" href="/login">前往登录</Link></main>;
+  return <CreateNovelWorkspace key={user.id} />;
+}
+function CreateNovelWorkspace() {
   const router = useRouter();
-  const { addNovel, notify, ready } = useStudio();
+  const { addNovel, notify, ready, refreshNovel } = useStudio();
   const [values, setValues] = useState(initial);
   const [errors, setErrors] = useState({});
-  const [showPreview, setShowPreview] = useState(false);
   const [saving, setSaving] = useState(false);
+  const builder = useNovelBuilder();
   function change(key, value) {
     setValues((previous) => ({ ...previous, [key]: value }));
     setErrors((previous) => ({ ...previous, [key]: undefined }));
@@ -56,7 +66,7 @@ export function CreateNovelForm() {
     return true;
   }
   async function saveDraft() {
-    if (!validate() || saving || !ready) return;
+    if (!validate() || saving || builder.busy || !ready) return;
     setSaving(true);
     try {
       const novel = await addNovel(createNovelDraft(values));
@@ -65,8 +75,20 @@ export function CreateNovelForm() {
     } catch (error) {
       notify(error.message, "error");
       setSaving(false);
-      setShowPreview(false);
     }
+  }
+  async function generate() {
+    if (!validate() || saving || !ready || builder.busy) return;
+    if (Number(values.targetChapters) < 8 || Number(values.targetChapters) > 2000 || Number(values.targetWords) < 1000 || Number(values.wordsPerChapter) < 100) {
+      notify("AI 构建支持 8–2000 章、至少 1000 字，每章至少 100 字。手动创建不受此限制。", "error"); return;
+    }
+    await builder.generate({ genre: values.genre, premise: values.idea.trim(), style: values.style, protagonistHint: values.protagonist.trim(), targetWordCount: Number(values.targetWords), targetChapterCount: Number(values.targetChapters), chapterWordTarget: Number(values.wordsPerChapter), audience: values.audience, pace: values.pace, romanceLevel: values.romanceLevel, darknessLevel: values.darknessLevel, specialRequirements: values.specialRequirements });
+  }
+  async function confirm() {
+    const id = await builder.confirm();
+    if (!id) return;
+    try { await refreshNovel(id); router.push(`/novel/${id}`); }
+    catch { notify("小说已保存。工作台暂未加载，请点击进入工作台重试。", "info"); }
   }
   const expectedWords =
     Number(values.targetChapters) * Number(values.wordsPerChapter);
@@ -76,6 +98,7 @@ export function CreateNovelForm() {
         <ArrowLeft size={15} />
         返回我的作品
       </Link>
+      {builder.preview ? <NovelPlanPreview builder={builder} onConfirm={confirm} /> : <>
       <div className="create-heading">
         <span className="section-kicker">
           EVERY GREAT STORY STARTS WITH AN IDEA
@@ -89,9 +112,10 @@ export function CreateNovelForm() {
           noValidate
           onSubmit={(event) => {
             event.preventDefault();
-            if (validate()) setShowPreview(true);
+            void generate();
           }}
         >
+          <fieldset className="builder-fieldset" disabled={saving || builder.busy}>
           <div className="form-section-title">
             <span>01</span>
             <h2>故事的种子</h2>
@@ -201,11 +225,16 @@ export function CreateNovelForm() {
               onChange={(event) => change("protagonist", event.target.value)}
             />
           </Field>
+          <details className="builder-options">
+            <summary>更多创作偏好（可选）</summary>
+            <div className="builder-options-grid">{[["audience", "目标读者", "例如：喜欢职场成长的成年读者"], ["pace", "故事节奏", "例如：快节奏，冲突层层递进"], ["romanceLevel", "感情线比重", "例如：无感情线 / 单线慢热"], ["darknessLevel", "故事氛围", "例如：温暖、写实、有希望"]].map(([key, label, placeholder]) => <Field key={key} label={label} htmlFor={key}><input id={key} value={values[key]} maxLength={100} placeholder={placeholder} onChange={(event) => change(key, event.target.value)} /></Field>)}</div>
+            <Field label="特殊要求" htmlFor="specialRequirements"><textarea id="specialRequirements" rows={3} value={values.specialRequirements} maxLength={1500} placeholder="例如：没有超能力，主角靠专业知识与团队成长。" onChange={(event) => change("specialRequirements", event.target.value)} /></Field>
+          </details>
           <div className="form-actions">
             <button
               type="button"
               className="button button-ghost"
-              disabled={!ready || saving}
+              disabled={!ready || saving || builder.busy}
               onClick={saveDraft}
             >
               <Save size={16} />
@@ -214,15 +243,18 @@ export function CreateNovelForm() {
             <button
               type="submit"
               className="button button-primary"
-              disabled={!ready || saving}
+              disabled={!ready || saving || builder.busy}
             >
               <Sparkles size={17} />
-              AI 构建小说 <ArrowRight size={17} />
+              {builder.busy ? "正在构建…" : "AI 构建小说"} <ArrowRight size={17} />
             </button>
           </div>
           <p className="form-disclaimer">
-            当前为界面预览，AI 构建尚未接入。你可以先创建小说。
+            AI 先生成可修改的完整方案，由你确认后保存。也可以直接创建小说，手动完善设定。
           </p>
+          </fieldset>
+          <BuilderError error={builder.error} />
+          {builder.status === "generating" && <BuilderStatus />}
         </form>
         <aside className="create-aside">
           <div className="idea-note">
@@ -235,7 +267,7 @@ export function CreateNovelForm() {
               <br />
               不止一种可能。
             </h2>
-            <p>未来，AI 将从你的灵感出发，构建这些故事基石。</p>
+            <p>AI 从你的灵感出发，构建这些故事基石。</p>
             <div className="generation-list">
               {[
                 [BookOpen, "小说身份", "书名 · 简介 · 故事风格"],
@@ -258,38 +290,10 @@ export function CreateNovelForm() {
               先种下一颗种子，再让它慢慢生长。
             </div>
           </div>
-          <div className="local-note">创意将保存到你的云端账号。</div>
+          <div className="local-note">AI 方案经你确认后才保存到云端账号。</div>
         </aside>
       </div>
-      {showPreview && (
-        <Modal
-          title="你的创意，已经准备好出发"
-          onClose={() => setShowPreview(false)}
-        >
-          <div className="modal-callout">
-            <Sparkles size={26} />
-            <p>AI 构建小说尚未接入。</p>
-            <span>
-              当前不会自动生成书名、设定或正文。你可以将这份创意保存到你的云端账号，进入工作台继续完善。
-            </span>
-          </div>
-          <div className="modal-actions">
-            <button
-              className="button button-ghost"
-              onClick={() => setShowPreview(false)}
-            >
-              继续编辑
-            </button>
-            <button
-              className="button button-primary"
-              onClick={saveDraft}
-              disabled={saving}
-            >
-              保存草稿并进入 <ArrowRight size={16} />
-            </button>
-          </div>
-        </Modal>
-      )}
+      </>}
     </main>
   );
 }

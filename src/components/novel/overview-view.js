@@ -26,6 +26,7 @@ import {
   novelWordCount,
 } from "@/lib/domain/novel";
 import { RecordForm } from "./record-form";
+import { BibleDetails } from "./bible-details";
 
 const bibleFields = [
   { key: "synopsis", label: "小说简介", type: "textarea" },
@@ -33,6 +34,12 @@ const bibleFields = [
   { key: "storyline", label: "故事主线", type: "textarea" },
   { key: "antagonist", label: "主要反派", type: "textarea" },
   { key: "romance", label: "感情线", type: "textarea" },
+  { key: "corePremise", label: "核心设定", type: "textarea" },
+  { key: "storyTone", label: "故事基调", type: "textarea" },
+  { key: "writingStyle", label: "写作风格", type: "textarea" },
+  { key: "protagonistArc", label: "主角成长", type: "textarea" },
+  { key: "powerSystem", label: "能力体系", type: "textarea" },
+  { key: "endingDirection", label: "结局方向", type: "textarea" },
 ];
 
 export function OverviewView() {
@@ -156,6 +163,7 @@ export function OverviewView() {
           </div>
         ))}
       </section>
+      <BibleDetails bible={novel.bible} metadata={novel.builderMetadata} />
       <div className="story-shortcuts">
         <Link href={`${base}/characters`}>
           <Users size={17} />
@@ -215,27 +223,27 @@ export function OverviewView() {
                     key: "title",
                     label: "小说书名",
                     required: true,
-                    maxLength: 60,
+                    maxLength: 80,
                   },
                   {
                     key: "idea",
                     label: "一句话创意",
                     type: "textarea",
                     required: true,
-                    maxLength: 500,
+                    maxLength: 1200,
                   },
                   {
                     key: "protagonist",
                     label: "主角设定",
                     type: "textarea",
-                    maxLength: 1000,
+                    maxLength: 2000,
                   },
                 ]
           }
           onSave={(values) =>
             update((previous) =>
               editing === "bible"
-                ? { ...previous, bible: values }
+                ? { ...previous, bible: { ...previous.bible, ...values } }
                 : { ...previous, ...values },
             )
           }

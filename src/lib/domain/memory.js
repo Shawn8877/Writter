@@ -17,5 +17,5 @@ export function memorySource(entry, novel) {
     return { label: `世界设定 · ${setting?.title || "来源未找到"}`, chapterId: chapterId || setting?.sourceChapterId, href: `/novel/${novel.id}/world` };
   }
   const chapter = novel.chapters.find((item) => item.id === chapterId);
-  return { chapterId, label: chapter ? `第 ${chapter.number} 章 · ${chapter.title}` : entry.sourceType === "ai" ? "AI 来源记录（预留）" : "手动记录", href: chapter ? `/novel/${novel.id}/chapters?chapter=${chapter.id}` : null };
+  return { chapterId, label: chapter ? `第 ${chapter.number} 章 · ${chapter.title}` : entry.sourceType === "ai" ? "AI 构建 · 已确认的初始记忆" : "手动记录", href: chapter ? `/novel/${novel.id}/chapters?chapter=${chapter.id}` : null };
 }

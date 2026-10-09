@@ -27,7 +27,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_REPLACE_WITH_YOUR_PUBLIC_KEY
 
 本项目的变量名固定为 `NEXT_PUBLIC_SUPABASE_ANON_KEY`，它同时接受 publishable key 和旧版 anon key。官方文档中的 `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` 不能直接替换这里的变量名，除非同步修改项目配置代码。
 
-`.env.local` 已被 Git 忽略。只填写这两个公开项目配置；不要添加 `SUPABASE_SERVICE_ROLE_KEY`，不要把 secret key 放进任何 `NEXT_PUBLIC_` 变量。
+`.env.local` 已被 Git 忽略。Supabase 部分只需这两个公开配置；不要添加 `SUPABASE_SERVICE_ROLE_KEY`，不要把 secret key 放进任何 `NEXT_PUBLIC_` 变量。Phase 3A 的服务器 OpenAI 配置另见 [PHASE_3A.md](PHASE_3A.md)。
 
 本次还确认 `.env` 与 `.env.*.local` 均被忽略，Git 当前只跟踪空值模板 `.env.example`。公开配置可以直接写入上述本地文件，无需在聊天中发送密码或管理员密钥。
 
@@ -44,14 +44,17 @@ npm run dev
 
 ## 3. 执行数据库迁移
 
-当前项目已经执行 001 和 002，不要重复初始化。首次部署到空数据库时，以数据库所有者身份按顺序完整执行：
+当前项目已经执行 001、002 和 Phase 3A 的 003，不要重复初始化。首次部署到空数据库时，以数据库所有者身份按顺序完整执行：
 
 ```text
 supabase/migrations/001_initial_schema.sql
 supabase/migrations/002_phase_2_5_fixes.sql
+supabase/migrations/003_ai_novel_builder.sql
 ```
 
-文件内包含 `begin;` / `commit;`，需整体执行。001 创建表、RLS、来源约束和事务 RPC；002 将业务版本冲突从 `40001` 改为 `PT409`，避免托管 PostgREST 把永久冲突反复重试。已运行 001 的环境只需补上 002。
+文件内包含 `begin;` / `commit;`，需整体执行。001 创建表、RLS、来源约束和事务 RPC；002 将业务版本冲突从 `40001` 改为 `PT409`，避免托管 PostgREST 把永久冲突反复重试。只运行过 001 的环境需按顺序补上 002、003。
+
+003 增加 AI 构建元数据、不可重复确认的回执、Bible 宏观阶段与完整资料的事务 RPC。已有 001/002 的其他环境只补 003，不修改旧迁移或删除旧数据。OpenAI 配置和验收单独见 [PHASE_3A.md](PHASE_3A.md)。
 
 这是初始建库迁移，不是可重复运行的初始化按钮。成功执行一次后，不要反复粘贴执行；若提示表已存在，先确认目标项目和迁移历史，不要删除现有表来消除报错。
 

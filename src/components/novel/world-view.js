@@ -36,7 +36,7 @@ export function WorldView() {
             key: "category",
             label: "设定分类",
             defaultValue: "世界规则",
-            options: ["时代背景", "核心规则", "组织势力", "世界规则", "其他"],
+            options: ["时代背景", "核心规则", "组织势力", "世界规则", "地点", "能力体系", "重要概念", "阵营", "重要物品", "其他"],
           },
           {
             key: "body",

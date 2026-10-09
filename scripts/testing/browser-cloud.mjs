@@ -243,7 +243,7 @@ try {
   assert.deepEqual(report.errors, [], "Unexpected browser errors or warnings");
   report.status = "passed";
 } catch (error) {
-  report.status = "failed"; report.failedStage = stage; report.failure = { name: error.name, message: String(error.message).replace(/sb[p_][\w-]+/g, "[redacted]").slice(0, 2200) };
+  report.status = "failed"; report.failedStage = stage; report.failure = { name: error.name, message: "Browser check failed; sensitive request details omitted." };
   console.error(`FAIL: ${stage}: ${error.name}`);
   await page?.screenshot({ path: `${folder}/failure.png`, fullPage: true }).catch(() => {});
   process.exitCode = 1;

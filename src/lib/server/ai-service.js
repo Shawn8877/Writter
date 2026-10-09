@@ -1,6 +1,6 @@
 import "server-only";
 
-// Phase 1 contract only. No SDK, API key lookup, model invocation or external request.
+// Legacy chapter/outline contract. Novel Builder uses /api/ai/novels/build.
 export const AI_ACTIONS = [
   "build-novel",
   "generate-outline",
@@ -23,6 +23,6 @@ export async function generateStory(request) {
     return { code: "INVALID_ACTION", message: "不支持的创作操作。" };
   return {
     code: "AI_NOT_CONNECTED",
-    message: "AI 功能尚未接入，当前仅提供创作界面预览。",
+    message: request.action === "build-novel" ? "请从创建小说页面使用 AI 构建，并在预览后确认保存。" : "此项 AI 创作功能尚未开放，当前不会生成或改写内容。",
   };
 }

@@ -14,6 +14,9 @@ const rpcParameters = {
   studio_patch_novel: ["p_novel_id", "p_expected_revision", "p_patch", "p_collections"],
   studio_save_chapter: ["p_novel_id", "p_chapter_id", "p_expected_revision", "p_values", "p_create_version"],
   studio_delete_novel: ["p_novel_id", "p_expected_revision"],
+  studio_begin_ai_generation: ["p_request_id", "p_lease_token", "p_input_hash", "p_model", "p_schema_version"],
+  studio_finish_ai_generation: ["p_generation_id", "p_lease_token", "p_status", "p_model", "p_input_tokens", "p_output_tokens", "p_latency_ms", "p_provider_request_id", "p_error_type"],
+  create_ai_novel_bundle: ["p_generation_id", "p_input_hash", "p_bundle"],
 };
 const tableNames = new Set(["profiles", "novels", "volumes", "chapters", "chapter_versions", "characters", "world_entries", "timeline_events", "novel_bible", "chapter_summaries", "memory_items"]);
 const encode = (data) => Buffer.from(JSON.stringify(data)).toString("base64url");
@@ -154,7 +157,7 @@ export async function startSupabaseFixture({ port = 43001, appPort = 43000, quie
         const keys = rpcParameters[name];
         if (!keys) return send(404, errorResult("PGRST202", "Unknown RPC"));
         const body = await readBody(request);
-        const result = await authenticatedQuery(account, () => db.query(`select public.${name}(${keys.map((_, i) => `$${i + 1}`).join(",")}) as result`, keys.map((key) => typeof body[key] === "object" ? JSON.stringify(body[key]) : body[key] ?? null)));
+        const result = await authenticatedQuery(account, () => db.query(`select public.${name}(${keys.map((_, i) => `$${i + 1}`).join(",")}) as result`, keys.map((key) => body[key] !== null && typeof body[key] === "object" ? JSON.stringify(body[key]) : body[key] ?? null)));
         return send(200, result.rows[0].result);
       }
       const table = pathname.split("/").pop();

@@ -4,6 +4,7 @@
 @import "../styles/auth.css";
 @import "../styles/chapters-phase2.css";
 @import "../styles/phase2.css";
+@import "../styles/novel-builder.css";
 
 @theme inline {
   --color-background: #111312;
