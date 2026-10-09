@@ -57,6 +57,21 @@ await check("missing key fails honestly before database reservation or provider 
   try { assert.throws(getAiConfig, (e) => e.code === "AI_NOT_CONFIGURED"); await assert.rejects(generatePreview({ rpc: () => assert.fail("must not reserve") }, { requestId: randomUUID(), input }), (e) => e.code === "AI_NOT_CONFIGURED"); }
   finally { if (previous !== undefined) process.env.OPENAI_API_KEY = previous; }
 });
+await check("real SDK connection, timeout and HTTP errors retain safe classification and request IDs", async () => {
+  for (const [failure, code] of [
+    [new TypeError("private connection detail"), "AI_NETWORK_ERROR"],
+    [Object.assign(new Error("private timeout detail"), { name: "AbortError" }), "AI_TIMEOUT"],
+  ]) {
+    const client = new OpenAI({ apiKey: "fixture-only", maxRetries: 0, fetch: async () => { throw failure; } });
+    await assert.rejects(buildNovelPlan(input, { config, client }), (error) => error.code === code && !error.message.includes("private"));
+  }
+  const client = new OpenAI({ apiKey: "fixture-only", maxRetries: 0, fetch: async () => Response.json({ error: { message: "private provider detail", code: "invalid_api_key" } }, { status: 401, headers: { "x-request-id": "req_sdk_auth" } }) });
+  await assert.rejects(buildNovelPlan(input, { config, client }), (error) => error.code === "AI_AUTH_ERROR" && error.providerRequestId === "req_sdk_auth" && !error.message.includes("private"));
+  for (const [providerCode, code] of [["credit_balance_exhausted", "AI_CREDITS_EXHAUSTED"], ["project_spend_limit_exceeded", "AI_QUOTA_EXCEEDED"], ["organization_spend_limit_exceeded", "AI_QUOTA_EXCEEDED"], ["organization_usage_limit_exceeded", "AI_QUOTA_EXCEEDED"], ["insufficient_quota", "AI_QUOTA_EXCEEDED"]]) {
+    const client = new OpenAI({ apiKey: "fixture-only", maxRetries: 0, fetch: async () => Response.json({ error: { message: "private billing detail", code: providerCode, type: "insufficient_quota" } }, { status: 429, headers: { "x-request-id": "req_sdk_quota" } }) });
+    await assert.rejects(buildNovelPlan(input, { config, client }), (error) => error.code === code && error.status === 429 && error.providerRequestId === "req_sdk_quota" && !error.message.includes("private"));
+  }
+});
 await check("both route handlers authenticate before body parsing or workflow", async () => {
   for (const workflow of [generatePreview, confirmNovelPlan]) {
     const handler = createBuilderHandler(workflow, 20000, { authenticate: async () => ({ error: Response.json({ code: "UNAUTHORIZED" }, { status: 401 }) }), read: () => assert.fail("not authenticated") });

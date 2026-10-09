@@ -20,9 +20,9 @@ NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-public-key
 ```
 
-手动创作只需要 Supabase 公开配置，不需要 service role key。AI 构建另需在服务器 `.env.local` 设置 `OPENAI_API_KEY` 和 `OPENAI_MODEL=gpt-6.1-sol`；后者可换成支持 Responses + Structured Outputs 的可用模型。密钥不能放入 `NEXT_PUBLIC_*` 或 Git，`.env.example` 中四个变量均为空。
+手动创作只需要 Supabase 公开配置，不需要 service role key。AI 构建另需在服务器 `.env.local` 设置 `OPENAI_API_KEY` 和 `OPENAI_MODEL=gpt-6.1-sol`；后者可换成支持 Responses + Structured Outputs 的可用模型。密钥不能放入 `NEXT_PUBLIC_*` 或 Git，`.env.example` 中变量均为空。若服务器需要 HTTP(S) 代理，可设置仅供 OpenAI 使用的 `OPENAI_PROXY_URL`；未设置时保持直连，Supabase 和浏览器不受影响。本机使用已有的本地代理，代理程序需保持运行；部署服务器时按其网络情况填写或留空。
 
-**Phase 3A 状态（2026-10-09）：AI Novel Builder 代码与测试流程完成，真实 OpenAI smoke test 尚未执行。** 用户选择稍后配置密钥。目前已验证 Structured Outputs 的 SDK 测试、预览修改、事务保存、幂等和真实 Supabase 账号隔离。当前项目已应用 003 迁移，原有 Phase 2.5 数据保留。完整结果及剩余限制见 [Phase 3A 报告](docs/PHASE_3A.md)。
+**Phase 3A 状态（2026-10-09）：AI Novel Builder 代码与测试流程完成；密钥和模型访问已验证，真实生成被 OpenAI API 余额不足阻塞。** 已实际尝试 smoke test，服务返回 `429 / credit_balance_exhausted`，尚未获得真实生成方案。目前已验证 Structured Outputs 的 SDK 测试、预览修改、事务保存、幂等和真实 Supabase 账号隔离。当前项目已应用 003 迁移，原有 Phase 2.5 数据保留。完整结果及剩余限制见 [Phase 3A 报告](docs/PHASE_3A.md)。
 
 ## 已实现
 

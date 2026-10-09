@@ -25,6 +25,7 @@ const ai = createServer(async (request, response) => {
   await new Promise((resolve) => setTimeout(resolve, 400));
   response.setHeader("Content-Type", "application/json"); response.setHeader("x-request-id", "req_browser_fixture");
   if (providerMode === "rate") { response.statusCode = 429; return response.end(JSON.stringify({ error: { type: "rate_limit_error", message: "fixture rate limit" } })); }
+  if (providerMode === "credits") { response.statusCode = 429; return response.end(JSON.stringify({ error: { type: "insufficient_quota", code: "credit_balance_exhausted", message: "fixture empty balance" } })); }
   const result = responseFixture(novelPlan(JSON.parse(body.input[1].content)));
   if (providerMode === "refusal") result.output[0].content = [{ type: "refusal", refusal: "fixture refusal" }];
   if (providerMode === "invalid") result.output[0].content[0].text = "{}";
@@ -34,7 +35,7 @@ await new Promise((resolve) => ai.listen(port + 2, "127.0.0.1", resolve));
 const log = await open(`${folder}/server.log`, "a");
 const child = spawn(process.execPath, ["node_modules/next/dist/bin/next", "dev", "--hostname", "127.0.0.1", "--port", String(port)], {
   cwd: root, windowsHide: true, stdio: ["ignore", log.fd, log.fd],
-  env: { ...process.env, NODE_OPTIONS: `--require "${fileURLToPath(new URL("./openai-fixture-preload.cjs", import.meta.url)).replaceAll("\\", "/")}"`, NOVELAI_TEST_MODE: "1", NOVELAI_OPENAI_FIXTURE: "1", NOVELAI_OPENAI_FIXTURE_URL: `http://127.0.0.1:${port + 2}/responses`, NEXT_PUBLIC_SUPABASE_URL: `http://127.0.0.1:${port + 1}`, NEXT_PUBLIC_SUPABASE_ANON_KEY: "testanon-fixture-only", OPENAI_API_KEY: "fixture-only-never-real", OPENAI_MODEL: "gpt-6.1-sol" },
+  env: { ...process.env, NODE_OPTIONS: `--require "${fileURLToPath(new URL("./openai-fixture-preload.cjs", import.meta.url)).replaceAll("\\", "/")}"`, NOVELAI_TEST_MODE: "1", NOVELAI_OPENAI_FIXTURE: "1", NOVELAI_OPENAI_FIXTURE_URL: `http://127.0.0.1:${port + 2}/responses`, NEXT_PUBLIC_SUPABASE_URL: `http://127.0.0.1:${port + 1}`, NEXT_PUBLIC_SUPABASE_ANON_KEY: "testanon-fixture-only", OPENAI_API_KEY: "fixture-only-never-real", OPENAI_MODEL: "gpt-6.1-sol", OPENAI_PROXY_URL: "" },
 });
 let browser; let stage = "start"; let expectedFailure = false;
 async function check(name, run) { stage = name; await run(); report.checks.push(name); await writeFile(`${folder}/results.json`, JSON.stringify(report, null, 2)); console.log(`PASS: ${name}`); }
@@ -146,9 +147,9 @@ try {
     await page.getByRole("button", { name: "取消", exact: true }).click(); await page.getByRole("button", { name: "丢弃预览", exact: true }).click();
     assert.equal(await page.locator("#idea").inputValue(), "另一个尚未保存的故事。"); assert.equal((await api("/api/novels")).data.novels.length, 1);
   });
-  await check("rate-limit and invalid structured output are honest errors with no new novel", async () => {
+  await check("rate-limit, exhausted credits and invalid structured output are honest errors with no new novel", async () => {
     expectedFailure = true;
-    for (const [mode, message] of [["rate", "AI 服务繁忙或额度不足，请稍后重试。"], ["invalid", "AI 返回的方案不够完整，请重新生成。"]]) {
+    for (const [mode, message] of [["rate", "AI 服务繁忙或额度不足，请稍后重试。"], ["invalid", "AI 返回的方案不够完整，请重新生成。"], ["credits", "OpenAI API 余额不足，请管理员充值后再试。"]]) {
       providerMode = mode; await page.getByRole("button", { name: "AI 构建小说", exact: true }).click(); await page.getByText(message, { exact: true }).waitFor();
       assert.equal((await api("/api/novels")).data.novels.length, 1);
     }

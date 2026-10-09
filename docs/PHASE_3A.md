@@ -2,7 +2,7 @@
 
 验收日期：2026-10-09（北京时间）。继续现有项目，保留深色 UI、三栏工作台、账号、章节与 Memory；未重建项目，没有 TypeScript 应用源码。
 
-**AI 代码完成，但真实 API smoke test 未执行。** 用户明确选择 OpenAI，并选择稍后配置密钥、先完成代码。当前 `.env.local` 未配置 `OPENAI_API_KEY`，没有实际 OpenAI 模型调用或费用。样例通过不能视为模型质量或真实 API 可用性已验证。最终判定：**NOT READY FOR PHASE 3B**。
+**AI 代码完成，密钥已配置；真实 API smoke test 已尝试，但被 API 余额不足阻塞。** 用户明确选择 OpenAI，并在本地保存了密钥。现已通过真实模型读取验证密钥及 `gpt-6.1-sol` 访问；生成接口返回 `429 / credit_balance_exhausted`（类型 `insufficient_quota`），尚未生成真实小说方案。样例通过不能视为模型质量或真实生成可用性已验证。最终判定：**NOT READY FOR PHASE 3B**。
 
 ## 前置检查
 
@@ -21,9 +21,10 @@ Phase 2.5 已就绪。开发前用现有 A/B 账号重新验证真实 Supabase�
 - 客户端位于 `openai.js`，带 `server-only`，固定官方 API 地址，不接受浏览器传入 key、模型或代理 URL。
 - 使用 `store:false`；最多 24000 output tokens，240 秒超时，SDK 自动重试关闭。Route 最长运行时间设置 300 秒，部署平台仍需支持相应运行时长。
 - `.env.example` 中 `OPENAI_API_KEY`、`OPENAI_MODEL` 都是空值。真实值只允许设置在服务器 `.env.local` 或部署平台环境变量，禁止 `NEXT_PUBLIC_*` 和 Git。
+- 可选 `OPENAI_PROXY_URL` 仅用于 OpenAI 请求，使用官方 SDK 推荐的 Undici fetch + ProxyAgent，连接池复用；为空时保持原有直连。此电脑的 Node 直连超时，已沿用 Windows 现有本地 HTTP 代理写入忽略的 `.env.local`。部署环境应按实际网络设置，不复制开发机的回环地址；本机代理程序需保持运行。
 - 未配置 key 时返回 `AI_NOT_CONFIGURED` 中文提示；不保留 mock 成功分支，也不自动转用 DeepSeek。
 
-参考：[Responses Structured Outputs 官方文档](https://developers.openai.com/api/docs/guides/structured-outputs?api-mode=responses)、[默认模型官方文档](https://developers.openai.com/api/docs/models/gpt-6.1-sol)。文档支持不代表当前账户已取得模型权限，仍需真实 smoke test。
+参考：[Responses Structured Outputs 官方文档](https://developers.openai.com/api/docs/guides/structured-outputs?api-mode=responses)、[默认模型官方文档](https://developers.openai.com/api/docs/models/gpt-6.1-sol)、[错误码说明](https://developers.openai.com/api/docs/guides/error-codes)。模型读取已成功，但余额恢复后仍需补完真实生成 smoke test。
 
 ## Schema 和一致性
 
@@ -86,10 +87,10 @@ Schema 使用严格对象，禁止未知字段，限制所有字符串与数组�
 
 | 验收 | 结果 |
 | --- | --- |
-| 16 组 AI/数据库测试 | 通过：4 题材 × 100/300/800 章、SDK 结构输出、输入/一致性、错误、两 API 鉴权、事务回滚、幂等、A/B 权限、租约与限流 |
+| 17 组 AI/数据库测试 | 通过：4 题材 × 100/300/800 章、SDK 结构输出、输入/一致性、真实 SDK 错误类型与 request ID、余额/用量错误、两 API 鉴权、事务回滚、幂等、A/B 权限、租约与限流 |
 | 隔离浏览器流程 | 11 组通过：完整流程、重新生成失败保留修改、移动端、保存失败重试、完整 Bible/各页面、B 越权、取消、429/异常结构、手动创建、脚本就绪前登录保护 |
 | 真实 Supabase + 测试方案浏览器 | 6 组通过：真实缺密钥错误、预览不建书、修改确认、关系表/各页面、重复确认、B 不能读取或确认 A |
-| 真实 OpenAI smoke test | **未执行：没有配置 key，用户选择稍后配置** |
+| 真实 OpenAI smoke test | **已尝试、未通过：直连超时已修复；真实生成返回 429，最小诊断请求确认 credit_balance_exhausted；没有真实方案落库** |
 | 原有数据库 / Repository | 通过 |
 | 原有真实 SDK 数据库回归 | 9 组通过，未破坏保存、CAS、来源与级联 |
 | 原有真实浏览器回归 | 14 组全部通过，console / hydration / 非预期 HTTP 错误为 0 |
@@ -99,6 +100,8 @@ Schema 使用严格对象，禁止未知字段，限制所有字符串与数组�
 
 主要证据：
 
+- `artifacts/phase3a/openai-configuration-check.json`，密钥/模型访问成功，真实生成被余额耗尽阻塞；仅保存安全状态信息
+- `artifacts/phase3a/browser-fixture-2026-10-09T06-51-57-650Z/results.json`，代理配置修复后 11 组浏览器回归通过，包含余额不足提示；errors=[]，未调用真实 OpenAI
 - `artifacts/phase3a/unit-database.json`
 - `artifacts/phase3a/browser-cloud-2026-10-09T05-18-22-767Z/results.json`，真实 Supabase 测试，errors=[]
 - `artifacts/phase3a/browser-fixture-2026-10-09T06-14-44-097Z/results.json`，11 组浏览器通过，errors=[]
@@ -128,7 +131,7 @@ npm run test:browser:cloud -- --allow-cloud-test-writes
 npm run test:browser:ai:cloud -- --allow-cloud-test-writes
 ```
 
-未来在本地填好 `OPENAI_API_KEY` / `OPENAI_MODEL`，重启网站后，下面一条命令才会真正请求一次 OpenAI，并验证修改、确认、各表与账号隔离：
+本机密钥、模型与代理现已配置。补充 OpenAI API 余额后，下面一条命令会真正请求一次 OpenAI，并验证修改、确认、各表与账号隔离：
 
 ```sh
 npm run test:ai:smoke -- --allow-cloud-test-writes
@@ -170,7 +173,7 @@ scripts/testing/openai-fixture-preload.cjs
 
 ## 当前限制与后续
 
-1. 阻塞真实验收：OpenAI key 未配置；模型账户权限、真实耗时、token 消耗和四题材实际输出质量尚未验证。不要据样例测试宣称真实 AI 已连通。
+1. 阻塞真实验收：OpenAI API 返回余额耗尽。密钥和模型读取已成功，真实生成耗时、token 消耗和四题材实际输出质量尚未验证。不要据样例测试宣称真实生成已通过；不自动重试余额错误。
 2. 未确认预览保存在内存；刷新丢失后需要重新生成，可能再次计费。生产部署需支持约 4–5 分钟请求，平台超时过短应先改任务队列，不扩大本次范围。
 3. 列表仍读取旧聚合（含正文），百万字规模前应优化为轻量列表与按章节读取；本阶段没有假装完成百万字连续生成。
 4. 依赖兼容更新后的锁文件使用 Next 16.4.0；`npm audit --omit=dev` 为 0 漏洞。开发依赖仍有 5 个 high 条目，来自同一 braces→micromatch→fast-glob→Next ESLint 链；现有自动修复建议会降级 ESLint 配置到 Next 14，故未强行采用。需跟进开发工具链上游修复。
@@ -178,8 +181,10 @@ scripts/testing/openai-fixture-preload.cjs
 
 ## 最终交付记录
 
-`npm run dev` 正常运行；`lint`、`build`、原有 DB/Repository、16 组 AI 测试、11 组隔离浏览器、6 组真实 Supabase 样例浏览器、9 组原有云端数据库和 14 组旧浏览器回归通过。所有成功浏览器报告 errors=[]；预期的 401/404/429/503 负面用例单独识别。001/002 校验值保持原样，003 已真实部署。
+`npm run dev` 正常运行；`lint`、`build`、原有 DB/Repository、17 组 AI 测试、11 组隔离浏览器、6 组真实 Supabase 样例浏览器、9 组原有云端数据库和 14 组旧浏览器回归通过。所有成功浏览器报告 errors=[]；预期的 401/404/429/503 负面用例单独识别。001/002 校验值保持原样，003 已真实部署。
 
 Git 交付标题为 `Phase 3A: add AI novel builder`，目标 `https://github.com/Shawn8877/Writter` 的 `main`；本地密钥、账号、CLI 和 artifacts 不提交。具体提交编号与远端校验以交付回复为准。
 
-**AI代码完成，但真实API smoke test 未执行。NOT READY FOR PHASE 3B。** 唯一真实 AI 验收阻塞是尚未配置密钥；实际模型权限、输出质量与耗时需在配置后验证。已停止于 Phase 3A，没有提前实现下一阶段功能。
+配置跟进（2026-10-09）：密钥与模型读取验证成功；补充可选服务端代理，修复真实 SDK 连接/超时类型及 `requestID` 读取，并区分余额耗尽与用量上限。实际尝试生成时得到 429；最小 16 输出 token 诊断请求确认 `credit_balance_exhausted` 后停止请求。没有用固定样例冒充成功，没有创建新的真实 AI 小说。
+
+**AI代码完成，但真实API smoke test 受余额不足阻塞。NOT READY FOR PHASE 3B。** 余额恢复后继续一次真实生成、落库和质量审阅；未提前实现下一阶段功能。
