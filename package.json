@@ -16,6 +16,8 @@
     "test:browser:cloud": "node scripts/testing/browser-cloud.mjs",
     "test:security": "node scripts/test-security.mjs",
     "test:ai": "node --import ./scripts/testing/register-server.mjs scripts/test-ai.mjs",
+    "test:chapters": "node --import ./scripts/testing/register-server.mjs scripts/test-chapters.mjs",
+    "test:browser:chapters": "node scripts/testing/browser-chapters.mjs",
     "test:browser:ai": "node scripts/testing/browser-ai-builder.mjs",
     "test:browser:ai:cloud": "node --import ./scripts/testing/register-server.mjs scripts/testing/browser-ai-cloud.mjs",
     "test:ai:smoke": "node --import ./scripts/testing/register-server.mjs scripts/testing/browser-ai-cloud.mjs --real-ai"

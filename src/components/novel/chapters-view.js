@@ -22,7 +22,7 @@ export function ChaptersView() {
     novel.chapters[0];
   function mayLeave() {
     if (!dirty) return true;
-    if (!window.confirm("章节还有未同步到云端的修改，本地草稿会保留供返回时恢复。确定切换吗？"))
+    if (!window.confirm("章节有未完成操作、未同步的修改或未确认的 AI 预览，确定切换吗？"))
       return false;
     return true;
   }
@@ -93,7 +93,7 @@ export function ChaptersView() {
                     <strong>{chapter.title}</strong>
                     <small>
                       {chapter.body
-                        ? `${countWords(chapter.body)} 字 · 草稿`
+                        ? `${countWords(chapter.body)} 字 · ${chapter.status || "草稿"}`
                         : "待创作"}
                     </small>
                   </span>

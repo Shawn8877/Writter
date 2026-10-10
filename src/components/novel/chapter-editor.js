@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Save, Sparkles, ArrowRight, RotateCcw, Expand, WandSparkles,
+  Save, ArrowRight, RotateCcw, Expand, WandSparkles,
   GitBranch, FileText, Check, AlignLeft, BookOpen, History,
   Copy, CloudUpload, LoaderCircle,
 } from "lucide-react";
@@ -10,6 +10,7 @@ import { AiButton, Badge, Modal } from "@/components/ui";
 import { useStudio } from "@/components/studio-provider";
 import { useNovel } from "./novel-context";
 import { ChapterVersions } from "./chapter-versions";
+import { ChapterGeneration } from "./chapter-generation";
 import { countWords, formatNumber } from "@/lib/domain/novel";
 import { useUnsavedChanges } from "@/lib/hooks/use-unsaved-changes";
 import { chapterDraftCache } from "@/lib/repositories/chapter-draft-cache";
@@ -49,6 +50,8 @@ export function ChapterEditor({ chapter, onDirtyChange }) {
   const [showVersions, setShowVersions] = useState(false);
   const [recovery, setRecovery] = useState(null);
   const [copyText, setCopyText] = useState(null);
+  const [aiActive, setAiActive] = useState(false);
+  const aiLock = useRef(false);
   const dirty = !sameContent(view.draft, view.saved);
   const draft = view.draft;
   const busy = view.status === "saving" || view.status === "reloading";
@@ -58,8 +61,17 @@ export function ChapterEditor({ chapter, onDirtyChange }) {
     if (mounted.current) setView(live.current);
   }, []);
 
-  useUnsavedChanges(dirty);
-  useEffect(() => { onDirtyChange(dirty); }, [dirty, onDirtyChange]);
+  useUnsavedChanges(dirty || aiActive, aiActive ? "AI 正在生成或有未确认的预览，离开会关闭当前预览。确定离开吗？" : undefined);
+  useEffect(() => { onDirtyChange(dirty || aiActive); }, [dirty, aiActive, onDirtyChange]);
+
+  function setGenerationActive(active) { aiLock.current = active; setAiActive(active); }
+  function acceptGenerated(result) {
+    const saved = contentOf(result.chapter);
+    chapterDraftCache.remove(userId, novelId, chapterId);
+    publish({ draft: saved, saved, revision: result.chapter.revision, status: "saved", conflict: false, cacheToken: null, cacheError: false, restored: false });
+    acceptChapter(novelId, result.chapter, result.novelRevision);
+    setTab("正文");
+  }
 
   useEffect(() => {
     mounted.current = true;
@@ -93,7 +105,7 @@ export function ChapterEditor({ chapter, onDirtyChange }) {
 
   const save = useCallback(async (createVersion = false) => {
     const current = live.current;
-    if (!current.ready || current.conflict || inFlight.current || !userId) return;
+    if (!current.ready || current.conflict || inFlight.current || aiLock.current || !userId) return;
     if (!current.draft.title.trim()) {
       if (createVersion) notify("请为这一章填写标题。", "error");
       return;
@@ -274,7 +286,7 @@ export function ChapterEditor({ chapter, onDirtyChange }) {
     <div className="chapter-editor">
       <div className="editor-meta">
         <span>第 {chapter.number} 章</span>
-        <Badge tone={draft.body ? "green" : "neutral"}>{draft.body ? "草稿" : "待创作"}</Badge>
+        <Badge tone={draft.body ? "green" : "neutral"}>{draft.body ? (dirty ? "草稿" : chapter.status || "草稿") : "待创作"}</Badge>
         <span className={`editor-save-status ${view.conflict || view.status === "error" ? "editor-save-error" : ""}`} role="status" aria-live="polite">
           {view.status === "saved" && !dirty && <Check size={12} />}
           {busy && <LoaderCircle size={12} className="loading-spinner" />}
@@ -295,10 +307,12 @@ export function ChapterEditor({ chapter, onDirtyChange }) {
       )}
       <label className="sr-only" htmlFor="chapter-title">章节标题</label>
       <input id="chapter-title" className="chapter-title-input" value={draft.title} maxLength={100}
-        disabled={!view.ready || view.status === "reloading"}
+        disabled={!view.ready || view.status === "reloading" || aiActive}
         onChange={(event) => change("title", event.target.value)} placeholder="为这一章起个名字" />
       <div className="chapter-ai-toolbar">
-        <AiButton className="button button-primary button-small" icon={Sparkles}>生成本章</AiButton>
+        <ChapterGeneration novelId={novelId} chapterId={chapterId} revision={view.revision}
+          disabled={!view.ready || busy || dirty || view.conflict} hasContent={draft.body !== ""}
+          onActiveChange={setGenerationActive} onSaved={acceptGenerated} />
         <AiButton className="button button-ghost button-small" icon={ArrowRight}>生成下一章</AiButton>
         <AiButton className="button button-ghost button-small" icon={RotateCcw}>重新生成</AiButton>
       </div>
@@ -318,32 +332,32 @@ export function ChapterEditor({ chapter, onDirtyChange }) {
         </div>
         <label className="sr-only" htmlFor="chapter-body">章节正文</label>
         <textarea id="chapter-body" className="manuscript-input" value={draft.body}
-          disabled={!view.ready || view.status === "reloading"}
+          disabled={!view.ready || view.status === "reloading" || aiActive}
           onChange={(event) => change("body", event.target.value)}
-          placeholder="故事将从这里展开。你可以先手动写下正文，AI 生成将在后续阶段接入。" />
+          placeholder="故事将从这里展开。可以手动写下正文，也可以先保存本章大纲，再点击生成本章。" />
       </>}
       {tab === "本章大纲" && <div className="chapter-meta-editor">
         <h3>这一章，要发生什么？</h3><p>记录目标、冲突、关键事件与章末悬念。</p>
         <label className="sr-only" htmlFor="chapter-outline">本章大纲</label>
-        <textarea id="chapter-outline" value={draft.outline} rows={12} disabled={!view.ready || view.status === "reloading"}
+        <textarea id="chapter-outline" value={draft.outline} rows={12} disabled={!view.ready || view.status === "reloading" || aiActive}
           onChange={(event) => change("outline", event.target.value)} placeholder="写下这一章的故事走向…" />
       </div>}
       {tab === "章节摘要" && <div className="chapter-meta-editor">
         <h3>为下一章，留下一份记忆。</h3><p>摘要由你手动填写，保存后会同步到小说记忆。AI 自动总结尚未接入。</p>
         <label className="sr-only" htmlFor="chapter-summary">章节摘要</label>
-        <textarea id="chapter-summary" value={draft.summary} rows={12} disabled={!view.ready || view.status === "reloading"}
+        <textarea id="chapter-summary" value={draft.summary} rows={12} disabled={!view.ready || view.status === "reloading" || aiActive}
           onChange={(event) => change("summary", event.target.value)} placeholder="本章发生了什么？人物有哪些变化？留下了什么伏笔？" />
       </div>}
       <div className="editor-footer">
         <span>{formatNumber(countWords(draft.body))} 字 <small>/ 目标 {formatNumber(novel.wordsPerChapter)} 字</small></span>
         <div className="chapter-save-actions">
           <button className="button button-ghost button-small" onClick={() => setShowVersions(true)} disabled={!view.ready}><History size={14} />版本记录</button>
-          <button className="button button-primary button-small" onClick={() => { void save(true); }} disabled={!view.ready || busy || view.conflict || !draft.title.trim()}><Save size={14} />保存版本</button>
+          <button className="button button-primary button-small" onClick={() => { void save(true); }} disabled={!view.ready || busy || aiActive || view.conflict || !draft.title.trim()}><Save size={14} />保存版本</button>
         </div>
       </div>
       <div className="chapter-editor-notes">
-        <p className="editor-notice">修改后自动保存；点击“保存版本”保留一次历史正文。AI 操作仅展示入口。</p>
-        <button className="chapter-local-recovery" onClick={openRecovery} disabled={!view.ready || busy}>本地恢复</button>
+        <p className="editor-notice">修改后自动保存；AI 生成先预览，确认后保存正文和版本。其他 AI 操作尚未接入。</p>
+        <button className="chapter-local-recovery" onClick={openRecovery} disabled={!view.ready || busy || aiActive}>本地恢复</button>
       </div>
       {showVersions && <ChapterVersions novelId={novelId} chapterId={chapterId} onClose={() => setShowVersions(false)} />}
       {copyText !== null && <Modal title="复制当前草稿" onClose={() => setCopyText(null)}>

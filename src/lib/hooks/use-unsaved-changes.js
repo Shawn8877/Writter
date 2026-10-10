@@ -1,7 +1,7 @@
 "use client";
 import { useEffect } from "react";
 
-export function useUnsavedChanges(dirty) {
+export function useUnsavedChanges(dirty, message = "章节有尚未同步到云端的修改。临时草稿会保留在当前浏览器；确定离开吗？") {
   useEffect(() => {
     if (!dirty) return;
     const beforeUnload = (event) => {
@@ -19,7 +19,7 @@ export function useUnsavedChanges(dirty) {
         return;
       if (
         !window.confirm(
-          "章节有尚未同步到云端的修改。临时草稿会保留在当前浏览器；确定离开吗？",
+          message,
         )
       ) {
         event.preventDefault();
@@ -32,5 +32,5 @@ export function useUnsavedChanges(dirty) {
       window.removeEventListener("beforeunload", beforeUnload);
       document.removeEventListener("click", beforeLink, true);
     };
-  }, [dirty]);
+  }, [dirty, message]);
 }

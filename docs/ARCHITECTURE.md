@@ -31,7 +31,7 @@ Proxy / Server Client → 认证服务校验与 Cookie 刷新
 
 Dashboard、创建页、小说工作台有服务端 layout 保护。小说 layout 先验证 UUID、账号与 novels.user_id。所有数据 API 再独立鉴权，即使绕过页面仍受保护。
 
-原有 11 表和 Phase 3A 新增的 ai_generation_logs / ai_novel_bundles 共 13 表全部开启 RLS：profiles.id / novels.user_id 对应 auth.uid()；子表沿 novel_id 关联所有者；版本通过 chapter_id → chapters → novels 判断。INSERT/UPDATE 使用 WITH CHECK，阻止伪造归属。应用只使用公开 key 加用户会话，不使用 service role 绕过权限。
+原有 11 表、Phase 3A 的 ai_generation_logs / ai_novel_bundles、Phase 3C_0 的 ai_chapter_previews 共 14 表全部开启 RLS：profiles.id / novels.user_id 对应 auth.uid()；子表沿 novel_id 关联所有者；版本通过 chapter_id → chapters → novels 判断。普通表 INSERT/UPDATE 使用 WITH CHECK，阻止伪造归属；日志和章节预览只允许直接读取本人记录，写入由绑定账号及租约的窄 RPC 完成。应用只使用公开 key 加用户会话，不使用 service role 绕过权限。
 
 业务 RPC 为 SECURITY INVOKER。少量注册、级联维护 trigger 使用受限权限与固定 search_path；应用事务仍校验拥有者和 RLS。来源触发器和复合外键限制跨小说引用，包括同一账号拥有的另一部小说。
 
@@ -88,6 +88,8 @@ Dashboard、创建页、小说工作台有服务端 layout 保护。小说 layou
 | `/api/ai` | POST | 鉴权后返回 501，占位且 UI 不调用 |
 | `/api/ai/novels/build` | POST | 生成可编辑预览，仅写生成元数据，不建小说 |
 | `/api/novels/ai-confirm` | POST | 再验证方案，事务保存、幂等返回小说 ID |
+| `/api/ai/chapters/generate` | POST | 读取上下文、生成正文、返回进度与受保护预览 |
+| `/api/ai/chapters/confirm` | POST | 按 generationId 原子保存正文和 AI 版本，拒绝覆盖 |
 
 ## AI 构建的请求与保存边界
 
@@ -107,6 +109,14 @@ Phase 2.5 的验收记录见 [PHASE_2_5.md](PHASE_2_5.md)。2026-10-09 Phase 3A 
 
 为了兼容既有页面，作品列表和工作台目前读取完整聚合（含正文），尚不适合大量百万字作品的实际负载。开启 AI 连写前应拆为轻量列表、按章正文读取和版本分页，并加入服务器限流、配额、审计及更大文本的恢复存储。
 
-`src/lib/server/ai-service.js` 仅保留章节/大纲等旧占位契约；真正的 Novel Builder 位于独立 `src/lib/ai`。本次不开放章节生成，不自动提取或更新长期记忆。完成基础方案真实验收后，再决定 Phase 3B 范围。
+`src/lib/server/ai-service.js` 仅保留未实现操作的旧占位契约；真实 Novel Builder 和 Chapter Writer 位于独立 `src/lib/ai`。Phase 3C_0 只接通“生成本章”，不自动提取或更新长期记忆。
+
+## Phase 3C_0 章节生成
+
+`ChapterGeneration` → `/api/ai/chapters/generate`（鉴权、同源、严格输入）→ `chapter-context.js` 读取当前用户的数据库上下文 → `studio_begin_chapter_generation` 校验归属、空正文及版本，预留全账号生成租约 → `chapter-writer-service.js` 调用统一 server-only DeepSeek client → `studio_finish_chapter_generation` 原子记录状态、usage、受保护预览 → NDJSON 状态事件和完整预览。
+
+`/api/ai/chapters/confirm` 只接受 generationId。`studio_confirm_chapter_generation` 根据受保护的预览确定小说、章节、正文；重新校验所有者，按小说→章节顺序锁定，检查原版本和空正文，再同一事务保存正文、字数、generated 状态及 ai_generated 版本。确认回执在预览表，重复确认只返回当前章节，绝不覆盖后续人工修改。
+
+上下文包含 Bible、章节大纲、当前卷、人物、世界规则、80 条重要 active 记忆、上一章全文、前 5 章现有摘要和已有 continuityRequirements。上下文上限 180 KB；超过容量明确报错，单章目标仅支持 100–6000 字。完整行为、真实验收和限制见 [PHASE_3C_0.md](PHASE_3C_0.md)。
 
 本阶段未实现向量库、Embedding、RAG、AI 总结、Agent 或自动连写。测试替身只位于 scripts/testing，生产业务无模拟鉴权开关；NOVELAI_TEST_MODE 仅隔离 Next 构建目录。

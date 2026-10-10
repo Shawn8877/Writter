@@ -17,6 +17,9 @@ const rpcParameters = {
   studio_begin_ai_generation: ["p_request_id", "p_lease_token", "p_input_hash", "p_model", "p_schema_version"],
   studio_finish_ai_generation: ["p_generation_id", "p_lease_token", "p_status", "p_model", "p_input_tokens", "p_output_tokens", "p_latency_ms", "p_provider_request_id", "p_error_type"],
   create_ai_novel_bundle: ["p_generation_id", "p_input_hash", "p_bundle"],
+  studio_begin_chapter_generation: ["p_request_id", "p_lease_token", "p_input_hash", "p_model", "p_novel_id", "p_chapter_id", "p_novel_revision", "p_chapter_revision"],
+  studio_finish_chapter_generation: ["p_generation_id", "p_lease_token", "p_status", "p_model", "p_input_tokens", "p_output_tokens", "p_latency_ms", "p_provider_request_id", "p_error_type", "p_content"],
+  studio_confirm_chapter_generation: ["p_generation_id"],
 };
 const tableNames = new Set(["profiles", "novels", "volumes", "chapters", "chapter_versions", "characters", "world_entries", "timeline_events", "novel_bible", "chapter_summaries", "memory_items"]);
 const encode = (data) => Buffer.from(JSON.stringify(data)).toString("base64url");
@@ -167,17 +170,24 @@ export async function startSupabaseFixture({ port = 43001, appPort = 43000, quie
       for (const [key, value] of url.searchParams) {
         if (["select", "order", "offset", "limit"].includes(key)) continue;
         if (!/^[a-z_]+$/.test(key) && key !== "novels.user_id") throw new Error("Unsupported fixture filter key");
-        if (!value.startsWith("eq.")) throw new Error("Unsupported fixture filter operator");
+        if (value.startsWith("in.(") && value.endsWith(")")) {
+          const items = value.slice(4, -1).split(",");
+          filters.push(`t.${key} in (${items.map((item) => { values.push(item); return `$${values.length}`; }).join(",")})`);
+          continue;
+        }
+        if (!value.startsWith("eq.") && !value.startsWith("lt.")) throw new Error("Unsupported fixture filter operator");
         values.push(value.slice(3));
         if (key === "novels.user_id") filters.push(`exists(select 1 from public.novels n where n.id=t.novel_id and n.user_id=$${values.length})`);
-        else filters.push(`t.${key}=$${values.length}`);
+        else filters.push(`t.${key}${value.startsWith("lt.") ? "<" : "="}$${values.length}`);
       }
       let order = "";
       const sort = url.searchParams.get("order");
       if (sort) {
-        const [column, direction] = sort.split(".");
-        if (!/^[a-z_]+$/.test(column) || !["asc", "desc"].includes(direction)) throw new Error("Unsupported fixture order");
-        order = ` order by t.${column} ${direction}`;
+        order = ` order by ${sort.split(",").map((part) => {
+          const [column, direction] = part.split(".");
+          if (!/^[a-z_]+$/.test(column) || !["asc", "desc"].includes(direction)) throw new Error("Unsupported fixture order");
+          return `t.${column} ${direction}`;
+        }).join(",")}`;
       }
       const headerRange = request.headers.range?.match(/(\d+)-(\d+)/);
       const offset = Math.max(0, Number(url.searchParams.get("offset") || headerRange?.[1] || 0));

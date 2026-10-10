@@ -46,12 +46,12 @@ try {
   await page.goto(`${base}/novel/${novelId}/chapters`); await saved();
   let modelRequests = 0;
   page.on("request", (request) => { if (request.url().includes("/api/ai") || request.url().includes("api.openai.com")) modelRequests++; });
-  for (const name of ["生成本章", "生成下一章", "重新生成", "扩写", "润色", "修改剧情"]) {
+  for (const name of ["生成下一章", "重新生成", "扩写", "润色", "修改剧情"]) {
     await page.getByRole("button", { name, exact: true }).click();
     await page.locator(".toast").filter({ hasText: `「${name}」尚未接入 AI` }).waitFor();
   }
   assert.equal(modelRequests, 0);
-  pass("all six chapter AI actions remain UI placeholders with no model requests");
+  pass("five future chapter AI actions remain UI placeholders with no model requests; current-chapter generation has its own Phase 3C_0 suite");
   let held = await holdNextSave();
   await page.locator("#chapter-body").fill("发送中的第一段。"); await held.arrived;
   await page.locator("#chapter-body").fill("发送之后继续输入的完整段落。");

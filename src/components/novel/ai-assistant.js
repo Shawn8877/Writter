@@ -65,7 +65,7 @@ export function AiAssistant({ onClose }) {
         <div className="assistant-context">
           <span className="section-kicker">当前故事上下文</span>
           {[
-            [BookOpen, "核心设定", novel.bible.synopsis ? "已建立" : "待完善"],
+            [BookOpen, "核心设定", novel.bible.synopsis || novel.bible.corePremise || novel.bible.conflict ? "已建立" : "待完善"],
             [Users, "人物档案", `${novel.characters.length} 位人物`],
             [Globe2, "世界观", `${novel.world.length} 条设定`],
           ].map(([Icon, label, value]) => (
@@ -75,7 +75,7 @@ export function AiAssistant({ onClose }) {
               <small>{value}</small>
             </div>
           ))}
-          <p>未来生成时将结合这些设定，保持长篇故事的一致性。</p>
+          <p>“生成本章”会读取已保存的设定与记忆，生成后请审阅确认。</p>
         </div>
       </div>
       <div className="assistant-composer">
@@ -114,7 +114,7 @@ export function AiAssistant({ onClose }) {
         </form>
         <p>
           <LockKeyhole size={11} />
-          AI 尚未连接 · 不会发送你的内容
+          此助手为预览 · 不会发送这里的指令
         </p>
       </div>
     </aside>
