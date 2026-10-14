@@ -31,7 +31,7 @@ Proxy / Server Client → 认证服务校验与 Cookie 刷新
 
 Dashboard、创建页、小说工作台有服务端 layout 保护。小说 layout 先验证 UUID、账号与 novels.user_id。所有数据 API 再独立鉴权，即使绕过页面仍受保护。
 
-原有 11 表、Phase 3A 的 ai_generation_logs / ai_novel_bundles、Phase 3C_0 的 ai_chapter_previews 共 14 表全部开启 RLS：profiles.id / novels.user_id 对应 auth.uid()；子表沿 novel_id 关联所有者；版本通过 chapter_id → chapters → novels 判断。普通表 INSERT/UPDATE 使用 WITH CHECK，阻止伪造归属；日志和章节预览只允许直接读取本人记录，写入由绑定账号及租约的窄 RPC 完成。应用只使用公开 key 加用户会话，不使用 service role 绕过权限。
+原有 11 表、Phase 3A 的 ai_generation_logs / ai_novel_bundles、Phase 3C_0 的 ai_chapter_previews、Phase 3C_1 的 chapter_memory_jobs 共 15 表全部开启 RLS：profiles.id / novels.user_id 对应 auth.uid()；子表沿 novel_id 关联所有者；版本通过 chapter_id → chapters → novels 判断。普通表 INSERT/UPDATE 使用 WITH CHECK，阻止伪造归属；日志、章节预览和分析任务只允许直接读取本人记录，写入由绑定账号及租约的窄 RPC 完成。应用只使用公开 key 加用户会话，不使用 service role 绕过权限。
 
 业务 RPC 为 SECURITY INVOKER。少量注册、级联维护 trigger 使用受限权限与固定 search_path；应用事务仍校验拥有者和 RLS。来源触发器和复合外键限制跨小说引用，包括同一账号拥有的另一部小说。
 
@@ -47,7 +47,7 @@ Dashboard、创建页、小说工作台有服务端 layout 保护。小说 layou
 - volumes / chapters 使用稳定 UUID，章节有独立 revision；修改其他设定不会让正文自动保存无谓冲突。
 - chapter_versions 保留重要操作的正文快照。手动保存正文与插入版本在同一事务内完成；自动保存不插版本。历史不允许普通 UPDATE；整部小说删除时级联清理。
 - characters、world_entries、timeline_events 保留现有表单字段和扩展 JSONB；编辑展示字段不抹去暂未展示的结构化信息。
-- chapter_summaries 每章一条，手动摘要经触发器同步；结构化事件、人物变化和伏笔字段预留，不运行自动提取。
+- chapter_summaries 每章一条；手动摘要发生实际变化时同步。Phase 3C_1 自动分析写入摘要、结构化事件、人物变化、伏笔、next_chapter_requirements、分析正文摘要值和版本来源，不修改正文 revision。
 - memory_items 是长期事实的规范来源。世界观页的地点／物品／能力／伏笔是相同记录的投影。伏笔 active/resolved/obsolete 与中文标签无损映射。
 
 记忆 source_type、source_id 指向章节、人物、世界资料或手工来源，chapter_id 可附加章节上下文。引用必须属于同一小说；来源仍被引用时单独删除会被拒绝，需先修改记忆。删除整部小说则原子级联。
@@ -90,6 +90,7 @@ Dashboard、创建页、小说工作台有服务端 layout 保护。小说 layou
 | `/api/novels/ai-confirm` | POST | 再验证方案，事务保存、幂等返回小说 ID |
 | `/api/ai/chapters/generate` | POST | 读取上下文、生成正文、返回进度与受保护预览 |
 | `/api/ai/chapters/confirm` | POST | 按 generationId 原子保存正文和 AI 版本，拒绝覆盖 |
+| `/api/ai/chapters/memory` | GET / POST | 查询分析状态 / 明确重试章节记忆分析 |
 
 ## AI 构建的请求与保存边界
 
@@ -109,7 +110,7 @@ Phase 2.5 的验收记录见 [PHASE_2_5.md](PHASE_2_5.md)。2026-10-09 Phase 3A 
 
 为了兼容既有页面，作品列表和工作台目前读取完整聚合（含正文），尚不适合大量百万字作品的实际负载。开启 AI 连写前应拆为轻量列表、按章正文读取和版本分页，并加入服务器限流、配额、审计及更大文本的恢复存储。
 
-`src/lib/server/ai-service.js` 仅保留未实现操作的旧占位契约；真实 Novel Builder 和 Chapter Writer 位于独立 `src/lib/ai`。Phase 3C_0 只接通“生成本章”，不自动提取或更新长期记忆。
+`src/lib/server/ai-service.js` 仅保留未实现操作的旧占位契约；真实 Novel Builder、Chapter Writer 和 Chapter Memory Analyzer 位于独立 `src/lib/ai`。
 
 ## Phase 3C_0 章节生成
 
@@ -119,4 +120,22 @@ Phase 2.5 的验收记录见 [PHASE_2_5.md](PHASE_2_5.md)。2026-10-09 Phase 3A 
 
 上下文包含 Bible、章节大纲、当前卷、人物、世界规则、80 条重要 active 记忆、上一章全文、前 5 章现有摘要和已有 continuityRequirements。上下文上限 180 KB；超过容量明确报错，单章目标仅支持 100–6000 字。完整行为、真实验收和限制见 [PHASE_3C_0.md](PHASE_3C_0.md)。
 
-本阶段未实现向量库、Embedding、RAG、AI 总结、Agent 或自动连写。测试替身只位于 scripts/testing，生产业务无模拟鉴权开关；NOVELAI_TEST_MODE 仅隔离 Next 构建目录。
+未实现向量库、Embedding、RAG、Agent 或自动连写。测试替身只位于 scripts/testing，生产业务无模拟鉴权开关；NOVELAI_TEST_MODE 仅隔离 Next 构建目录。
+
+## Phase 3C_1 章节记忆分析
+
+新增迁移 005–008。确认正文沿用 004 的事务；AI 版本插入触发 pending 分析任务，随后确认 API 用 Next `after()` 在响应后运行分析。正文和版本已经提交，不受后续模型或记忆事务失败影响。持久化状态支持关闭页面后重新查看；进程中断不自动再次收费，5 分钟后允许明确重试。006 在正文修改后清空旧 AI 版本引用；007 为已分析但没有时间线的章节从已验证 keyEvents 投影事件，不补造日期；008 为修改已分析正文增加明确人工核对及恢复入口。
+
+`chapter-memory-context-builder.js` 只读取当前章正文、标题和大纲、Bible、人物、现有记忆。最多 80 人物、300 条记忆、180 KB 上下文，超出时明确停止；不读取整本正文。记忆包括已回收条目，防止同义新条目重新激活旧伏笔。
+
+`chapter-memory-service.js` 通过统一 DeepSeek Responses 客户端发送 `text.format.type=json_schema` 和严格 schema；最多 16000 输出 tokens。Zod 将返回投影到字段白名单，忽略额外注释、检查全部已知字段；mapper 检查正文逐字证据、人物引用、记忆 ID/类型和结果大小。模型只描述已发生事实，仍须作者审校事实与证据之间的语义关系。
+
+开始分析 RPC 锁账号、小说、章节，检查 RLS 所有者、上下文版本、正文内容和已有任务；相同正文的成功任务及有效 running 任务不重复调用模型。完成 RPC 同时提交 chapter_summaries、memory_items、characters、timeline_events、任务状态和 generation_type=chapter_memory_analysis 日志。正文/设定在分析期间变化则拒绝过时结果；数据库失败回滚全部记忆变化，再独立标记失败。租约不可通过 REST 读取，API 不接受客户端分析结果。
+
+去重顺序为模型引用的已有 ID → 同类型规范化标题 → 字符二元组相似度及同一主体描述。已有事实保留，再合并新增限制/代价，metadata 保留有限来源历史。人物只合并章末状态、关系、能力和最近变化，保留姓名/年龄/背景/人设。伏笔回收更新 resolved 和回收证据，不删除历史；世界观标签页将结构化回收记录显示为文字，手动编辑保留原证据和来源。时间线按本章+标题更新；未明确时间为空。
+
+下一章 Writer 优先读取 importance 5/4 和最近更新的 80 条 active 记忆、最新人物状态、最近 5 章摘要及上一章 next_chapter_requirements；另读取最多 40 条未回收伏笔。小说内其他章节存在 pending/running/failed/stale/needs_review 任务时会阻止付费生成，包括超过最近 5 章范围的失效记录。无向量检索，仍受 180 KB 上限约束。
+
+由于增量合并不能撤销旧事实，修改已成功分析的正文，或需要在已有后续记忆时处理旧章，会进入 needs_review。作者需修正摘要、人物、时间线、事实和伏笔，在页面勾选确认后调用 acknowledge；RPC 按所有者和章节 revision 检查，记录 reviewed_at/reviewed_revision，标记 reviewed，并阻止旧后台回调覆盖。该操作不调用 AI，也不把旧分析标成新分析。Writer 对 reviewed 章节只用 chapters.summary，不使用旧自动摘要结构和下一章要求；事实、人物和时间线由作者核对。再次改正文重新进入 needs_review，即使正文清空也可看到处理入口。复杂历史自动回撤重算留待后续阶段。
+
+编辑器独立轮询分析状态，成功刷新聚合；分析不锁正文阅读，修改正文会让分析结果失效。自动摘要单独展示，沿用手动摘要输入；普通正文自动保存不会用未修改的旧摘要覆盖 AI 摘要。完整验收与边界见 [PHASE_3C_1.md](PHASE_3C_1.md)。

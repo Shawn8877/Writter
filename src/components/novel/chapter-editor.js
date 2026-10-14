@@ -11,6 +11,7 @@ import { useStudio } from "@/components/studio-provider";
 import { useNovel } from "./novel-context";
 import { ChapterVersions } from "./chapter-versions";
 import { ChapterGeneration } from "./chapter-generation";
+import { ChapterMemoryStatus } from "./chapter-memory-status";
 import { countWords, formatNumber } from "@/lib/domain/novel";
 import { useUnsavedChanges } from "@/lib/hooks/use-unsaved-changes";
 import { chapterDraftCache } from "@/lib/repositories/chapter-draft-cache";
@@ -54,6 +55,9 @@ export function ChapterEditor({ chapter, onDirtyChange }) {
   const aiLock = useRef(false);
   const dirty = !sameContent(view.draft, view.saved);
   const draft = view.draft;
+  const [memoryStatus, setMemoryStatus] = useState("none");
+  const manualMemoryReview = ["needs_review", "reviewed"].includes(memoryStatus);
+  const automaticSummary = !manualMemoryReview && novel.memory?.chapterSummaries?.find((item) => item.chapterId === chapterId && item.analyzed);
   const busy = view.status === "saving" || view.status === "reloading";
 
   const publish = useCallback((patch) => {
@@ -316,6 +320,7 @@ export function ChapterEditor({ chapter, onDirtyChange }) {
         <AiButton className="button button-ghost button-small" icon={ArrowRight}>生成下一章</AiButton>
         <AiButton className="button button-ghost button-small" icon={RotateCcw}>重新生成</AiButton>
       </div>
+      <ChapterMemoryStatus novelId={novelId} chapterId={chapterId} revision={view.revision} hasContent={view.saved.body !== ""} onStatus={setMemoryStatus} />
       <div className="editor-tabs-row">
         <div className="content-tabs editor-tabs" role="group" aria-label="章节内容分类">
           {[["正文", AlignLeft], ["本章大纲", FileText], ["章节摘要", BookOpen]].map(([name, Icon]) => (
@@ -343,7 +348,11 @@ export function ChapterEditor({ chapter, onDirtyChange }) {
           onChange={(event) => change("outline", event.target.value)} placeholder="写下这一章的故事走向…" />
       </div>}
       {tab === "章节摘要" && <div className="chapter-meta-editor">
-        <h3>为下一章，留下一份记忆。</h3><p>摘要由你手动填写，保存后会同步到小说记忆。AI 自动总结尚未接入。</p>
+        <h3>为下一章，留下一份记忆。</h3><p>AI 正文确认保存后会自动提取摘要。也可以在下方手动填写并保存摘要。</p>
+        {manualMemoryReview && <p>本章正文已修改，请将核对后的摘要填写在下方。确认人工核对后，下一章使用这里的手动摘要，旧自动分析的约束不再使用。</p>}
+        {automaticSummary && <div className="chapter-automatic-summary"><strong>当前章节摘要</strong><p>{automaticSummary.summary}</p>
+          {!!automaticSummary.nextChapterRequirements?.length && <><strong>下一章连续性要求</strong><ul>{automaticSummary.nextChapterRequirements.map((item, i) => <li key={i}>{item}</li>)}</ul></>}
+        </div>}
         <label className="sr-only" htmlFor="chapter-summary">章节摘要</label>
         <textarea id="chapter-summary" value={draft.summary} rows={12} disabled={!view.ready || view.status === "reloading" || aiActive}
           onChange={(event) => change("summary", event.target.value)} placeholder="本章发生了什么？人物有哪些变化？留下了什么伏笔？" />
@@ -356,7 +365,7 @@ export function ChapterEditor({ chapter, onDirtyChange }) {
         </div>
       </div>
       <div className="chapter-editor-notes">
-        <p className="editor-notice">修改后自动保存；AI 生成先预览，确认后保存正文和版本。其他 AI 操作尚未接入。</p>
+        <p className="editor-notice">修改后自动保存；AI 正文确认后保存版本并分析记忆。其他 AI 操作尚未接入。</p>
         <button className="chapter-local-recovery" onClick={openRecovery} disabled={!view.ready || busy || aiActive}>本地恢复</button>
       </div>
       {showVersions && <ChapterVersions novelId={novelId} chapterId={chapterId} onClose={() => setShowVersions(false)} />}

@@ -11,6 +11,13 @@ const reverse = (map, value, fallback) => Object.keys(map).find((key) => map[key
 const changed = (a, b) => JSON.stringify(a) !== JSON.stringify(b);
 const stamps = (row) => ({ createdAt: row.created_at, updatedAt: row.updated_at });
 const pick = (object, keys) => Object.fromEntries(keys.filter((key) => object[key] !== undefined).map((key) => [key, object[key]]));
+const resolutionText = (value) => typeof value === "string" ? value : value?.description || "";
+function resolutionMetadata(stored, text = "") {
+  if (stored && typeof stored === "object" && !Array.isArray(stored)) {
+    return resolutionText(stored) === text ? stored : { ...stored, description: text, editedManually: true };
+  }
+  return text;
+}
 
 export class RepositoryError extends Error {
   constructor(message, status = 400, code = "INVALID_INPUT") { super(message); this.status = status; this.code = code; }
@@ -57,8 +64,8 @@ function modelFromRows(data) {
   const row = data.novel;
   const bible = data.novel_bible || {};
   const entries = data.memory_items.map(memoryFromRow);
-  const memory = { entries, chapterSummaries: data.chapter_summaries.map((item) => ({ id: item.id, chapterId: item.chapter_id, sourceChapterId: item.chapter_id, summary: item.summary, keyEvents: item.key_events, characterChanges: item.character_changes, newInformation: item.new_information, foreshadowingAdded: item.foreshadowing_added, foreshadowingResolved: item.foreshadowing_resolved, ...stamps(item) })) };
-  for (const [key, type] of Object.entries(memoryGroups)) memory[key] = entries.filter((entry) => entry.type === type).map((entry) => ({ ...entry, name: entry.title, description: entry.content, resolution: entry.metadata?.resolution || "", status: type === "foreshadowing" ? (foreshadowingStatuses[entry.status] || entry.status) : entry.status }));
+  const memory = { entries, chapterSummaries: data.chapter_summaries.map((item) => ({ id: item.id, chapterId: item.chapter_id, sourceChapterId: item.chapter_id, summary: item.summary, keyEvents: item.key_events, characterChanges: item.character_changes, newInformation: item.new_information, foreshadowingAdded: item.foreshadowing_added, foreshadowingResolved: item.foreshadowing_resolved, nextChapterRequirements: item.next_chapter_requirements || [], analyzed: !!item.analysis_content_hash, ...stamps(item) })) };
+  for (const [key, type] of Object.entries(memoryGroups)) memory[key] = entries.filter((entry) => entry.type === type).map((entry) => ({ ...entry, name: entry.title, description: entry.content, resolution: resolutionText(entry.metadata?.resolution), status: type === "foreshadowing" ? (foreshadowingStatuses[entry.status] || entry.status) : entry.status }));
   const chapters = data.chapters.map(chapterFromRow);
   return {
     id: row.id, userId: row.user_id, title: row.title, description: row.description, genre: row.genre, style: row.style, idea: row.premise, protagonist: row.protagonist,
@@ -101,7 +108,11 @@ function reconcileMemory(current, next) {
   let entries = [...current.entries];
   for (const [key, type] of Object.entries(memoryGroups)) {
     if (!next[key] || !changed(current[key], next[key])) continue;
-    const group = next[key].map((item) => ({ ...current.entries.find((entry) => entry.id === item.id), ...item, type, title: item.name, content: item.description, status: type === "foreshadowing" ? reverse(foreshadowingStatuses, item.status, "active") : item.status || "active", metadata: { ...item.metadata, resolution: item.resolution || "" } }));
+    const group = next[key].map((item) => {
+      const previous = current.entries.find((entry) => entry.id === item.id);
+      const metadata = { ...previous?.metadata, ...item.metadata };
+      return { ...previous, ...item, type, title: item.name, content: item.description, status: type === "foreshadowing" ? reverse(foreshadowingStatuses, item.status, "active") : item.status || "active", metadata: { ...metadata, resolution: resolutionMetadata(metadata.resolution, item.resolution) } };
+    });
     entries = [...entries.filter((entry) => entry.type !== type), ...group];
   }
   return entries;

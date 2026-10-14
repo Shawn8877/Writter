@@ -792,6 +792,11 @@ button {
     display: none;
   }
 }
+.chapter-memory-status { margin: 12px 0; padding: 12px 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); }
+.chapter-memory-status > p:first-child { display: flex; align-items: center; gap: 8px; font-size: 13px; margin-bottom: 6px; }
+.chapter-memory-status .button { margin-top: 8px; }
+.chapter-automatic-summary { padding: 16px; margin: 16px 0; border: 1px solid var(--border); border-radius: 10px; font-size: 14px; line-height: 1.8; }
+.chapter-automatic-summary ul { padding-left: 20px; list-style: disc; }
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;

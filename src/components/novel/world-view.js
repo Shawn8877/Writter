@@ -184,7 +184,7 @@ export function WorldView() {
         <AiButton className="button button-ghost button-small">
           AI 完善世界观
         </AiButton>
-        <p>当前内容均为手动维护，AI 自动提取与一致性检查尚未接入。</p>
+        <p>章节确认保存后会提取重要事实；你也可以手动维护和核对这些资料。</p>
       </div>
       {editing && (
         <RecordForm

@@ -104,10 +104,11 @@ try {
   const obsoleteHintId = crypto.randomUUID();
   const resolvedHintId = crypto.randomUUID();
   const newHintId = crypto.randomUUID();
+  const analysisResolution = { chapterId: novel.chapters[0].id, description: "钥匙已打开铁盒", evidence: "盒盖弹开" };
   novel = await repository.update(novel.id, novel.revision, { ...novel, memory: { ...novel.memory, entries: [
     ...novel.memory.entries,
     { id: obsoleteHintId, type: "foreshadowing", title: "已放弃的旧线索", content: "此线索不再采用", status: "obsolete", sourceType: "manual" },
-    { id: resolvedHintId, type: "foreshadowing", title: "已经揭晓的线索", content: "此前已完成回收", status: "resolved", sourceType: "manual" },
+    { id: resolvedHintId, type: "foreshadowing", title: "已经揭晓的线索", content: "此前已完成回收", status: "resolved", sourceType: "manual", metadata: { resolution: analysisResolution } },
   ] } });
   assert.equal(novel.memory.foreshadowing.find((entry) => entry.id === obsoleteHintId).status, "已失效");
   // Adding an unrelated hint through the world view must not reactivate old hints.
@@ -117,6 +118,8 @@ try {
   ] } });
   assert.equal(novel.memory.entries.find((entry) => entry.id === obsoleteHintId).status, "obsolete");
   assert.equal(novel.memory.entries.find((entry) => entry.id === resolvedHintId).status, "resolved");
+  assert.equal(novel.memory.foreshadowing.find((entry) => entry.id === resolvedHintId).resolution, "钥匙已打开铁盒");
+  assert.deepEqual(novel.memory.entries.find((entry) => entry.id === resolvedHintId).metadata.resolution, analysisResolution);
   assert.equal(novel.memory.entries.find((entry) => entry.id === newHintId).status, "active");
   novel = await repository.update(novel.id, novel.revision, { ...novel, memory: { ...novel.memory, foreshadowing: novel.memory.foreshadowing.map((entry) => entry.id === obsoleteHintId ? { ...entry, name: "旧线索的补充说明" } : entry) } });
   assert.equal(novel.memory.entries.find((entry) => entry.id === obsoleteHintId).status, "obsolete");
@@ -126,6 +129,9 @@ try {
   assert.equal(novel.memory.entries.find((entry) => entry.id === obsoleteHintId).status, "active");
   assert.equal(novel.memory.entries.find((entry) => entry.id === newHintId).status, "obsolete");
   assert.equal(novel.memory.foreshadowing.find((entry) => entry.id === newHintId).status, "已失效");
+  novel = await repository.update(novel.id, novel.revision, { ...novel, memory: { ...novel.memory, foreshadowing: novel.memory.foreshadowing.map((entry) => entry.id === resolvedHintId ? { ...entry, resolution: "人工核对后的回收说明" } : entry) } });
+  assert.equal(novel.memory.foreshadowing.find((entry) => entry.id === resolvedHintId).resolution, "人工核对后的回收说明");
+  assert.deepEqual(novel.memory.entries.find((entry) => entry.id === resolvedHintId).metadata.resolution, { ...analysisResolution, description: "人工核对后的回收说明", editedManually: true });
   const chapter = novel.chapters[0];
   novel = await repository.update(novel.id, novel.revision, { ...novel, title: "资料已变，章节独立保存" });
   const saved = await repository.saveChapter(novel.id, chapter.id, { title: "第一章", outline: "大纲", body: "正文 甲乙", summary: "章摘要" }, chapter.revision, false);

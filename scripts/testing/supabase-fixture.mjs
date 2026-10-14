@@ -20,8 +20,12 @@ const rpcParameters = {
   studio_begin_chapter_generation: ["p_request_id", "p_lease_token", "p_input_hash", "p_model", "p_novel_id", "p_chapter_id", "p_novel_revision", "p_chapter_revision"],
   studio_finish_chapter_generation: ["p_generation_id", "p_lease_token", "p_status", "p_model", "p_input_tokens", "p_output_tokens", "p_latency_ms", "p_provider_request_id", "p_error_type", "p_content"],
   studio_confirm_chapter_generation: ["p_generation_id"],
+  studio_begin_chapter_memory: ["p_novel_id", "p_chapter_id", "p_novel_revision", "p_chapter_revision", "p_lease_token", "p_model", "p_input_hash", "p_retry"],
+  studio_finish_chapter_memory: ["p_generation_id", "p_lease_token", "p_result", "p_error_type", "p_metrics"],
+  studio_fail_idle_chapter_memory: ["p_novel_id", "p_chapter_id", "p_error_type"],
+  studio_acknowledge_chapter_memory: ["p_novel_id", "p_chapter_id", "p_expected_revision"],
 };
-const tableNames = new Set(["profiles", "novels", "volumes", "chapters", "chapter_versions", "characters", "world_entries", "timeline_events", "novel_bible", "chapter_summaries", "memory_items"]);
+const tableNames = new Set(["profiles", "novels", "volumes", "chapters", "chapter_versions", "characters", "world_entries", "timeline_events", "novel_bible", "chapter_summaries", "memory_items", "chapter_memory_jobs"]);
 const encode = (data) => Buffer.from(JSON.stringify(data)).toString("base64url");
 const errorResult = (code, message) => ({ code, error_code: code, message, msg: message });
 
@@ -175,10 +179,11 @@ export async function startSupabaseFixture({ port = 43001, appPort = 43000, quie
           filters.push(`t.${key} in (${items.map((item) => { values.push(item); return `$${values.length}`; }).join(",")})`);
           continue;
         }
-        if (!value.startsWith("eq.") && !value.startsWith("lt.")) throw new Error("Unsupported fixture filter operator");
-        values.push(value.slice(3));
+        const operator = value.split(".")[0];
+        if (!["eq", "lt", "neq"].includes(operator)) throw new Error("Unsupported fixture filter operator");
+        values.push(value.slice(operator.length + 1));
         if (key === "novels.user_id") filters.push(`exists(select 1 from public.novels n where n.id=t.novel_id and n.user_id=$${values.length})`);
-        else filters.push(`t.${key}${value.startsWith("lt.") ? "<" : "="}$${values.length}`);
+        else filters.push(`t.${key}${{ eq: "=", lt: "<", neq: "<>" }[operator]}$${values.length}`);
       }
       let order = "";
       const sort = url.searchParams.get("order");

@@ -148,7 +148,7 @@ export function CharactersView() {
         <AiButton className="button button-ghost button-small">
           AI 设计人物
         </AiButton>
-        <p>人物状态当前由你维护，后续将支持从章节中自动提取与更新。</p>
+        <p>章节确认保存后会更新人物状态，基础人设仍可由你维护。</p>
       </div>
       {editing && (
         <RecordForm

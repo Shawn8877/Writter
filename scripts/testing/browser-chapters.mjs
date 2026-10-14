@@ -1,5 +1,5 @@
 // Default: isolated SQL/Auth and provider fixture. Explicit flag: one real paid
-// chapter request through the browser and hosted Supabase, under disposable A/B.
+// chapter request (plus its automatic memory analysis) through the browser and hosted Supabase, under disposable A/B.
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
@@ -31,8 +31,13 @@ try {
       assert.equal(request.url, "/responses"); assert.equal(request.headers.authorization, undefined); providerCalls++;
       let raw = ""; for await (const chunk of request) raw += chunk;
       const input = JSON.parse(raw); assert.equal(input.model, "deepseek-flash"); assert.equal(input.stream, false);
-      const context = JSON.parse(input.input[1].content); assert.equal(context.characters[0].name, "林舟"); assert.ok(context.previousChapter.content.includes("玻璃门"));
+      const context = JSON.parse(input.input[1].content); assert.equal(context.characters[0].name, "林舟");
       const result = responseFixture(novelPlan(builderInput()));
+      if (input.text?.format?.name === "chapter_memory_analysis") {
+        result.output[0].content[0].text = JSON.stringify({ chapterSummary: "林舟推开玻璃门，许青的声音从耳机中传来。她仍留在上海档案馆，协助林舟核对旧钟表店内的记录。林舟明确自己的能力最多只能预见未来二十四小时，无法越过界线。柜台上放着编号十七的铜钥匙。他们逐项核对今夜记录，发现时间被人改动，随后听见封闭房间里响起钟鸣。", keyEvents: [], characterChanges: [], newCharacters: [], relationshipChanges: [], newFacts: [], worldUpdates: [], timelineEvents: [], abilityChanges: [], items: [], foreshadowingAdded: [], foreshadowingResolved: [], nextChapterRequirements: [] });
+        response.setHeader("Content-Type", "application/json"); response.end(JSON.stringify(result)); return;
+      }
+      assert.ok(context.previousChapter.content.includes("玻璃门"));
       result.output[0].content[0].text = "林舟推开玻璃门，许青的声音从耳机中传来。她仍在上海档案馆。他只能预见未来二十四小时，绝不能越过那道界线。铜钥匙安静地躺在柜台上，编号十七。他们逐项核对今夜的记录，发现时间被人改动。封闭的房间里响起一声钟鸣。\n\n".repeat(10);
       await new Promise((resolve) => setTimeout(resolve, 2500)); response.setHeader("Content-Type", "application/json"); response.end(JSON.stringify(result));
     });

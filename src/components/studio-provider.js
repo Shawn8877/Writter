@@ -103,8 +103,8 @@ export function StudioProvider({ children }) {
     const old = novel.chapters.find((item) => item.id === chapter.id);
     if (!old || old.revision > chapter.revision) return;
     const chapters = novel.chapters.map((item) => item.id === chapter.id ? chapter : item);
-    const summaries = novel.memory.chapterSummaries.filter((item) => item.chapterId !== chapter.id);
-    if (chapter.summary) summaries.push({ chapterId: chapter.id, sourceChapterId: chapter.id, summary: chapter.summary });
+    const summaries = old.summary === chapter.summary ? novel.memory.chapterSummaries : novel.memory.chapterSummaries.filter((item) => item.chapterId !== chapter.id);
+    if (old.summary !== chapter.summary && chapter.summary) summaries.push({ chapterId: chapter.id, sourceChapterId: chapter.id, summary: chapter.summary });
     publish(currentNovels.current.map((item) => item.id !== novelId ? item : {
       // Only a complete aggregate response can advance the novel revision.
       // Otherwise a concurrent metadata edit could be silently overwritten.

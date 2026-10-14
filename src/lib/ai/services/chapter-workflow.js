@@ -46,5 +46,5 @@ export async function confirmChapterPreview(supabase, body) {
   if (!parsed.success) throw new AiError("INVALID_INPUT", "预览编号无效。", 400);
   const { data, error } = await supabase.rpc("studio_confirm_chapter_generation", { p_generation_id: parsed.data.generationId });
   chapterDatabaseError(error);
-  return { ...data, chapter: chapterFromRow(data.chapter) };
+  return { ...data, novelId: data.chapter.novel_id, chapter: chapterFromRow(data.chapter) };
 }

@@ -44,18 +44,24 @@ npm run dev
 
 ## 3. 执行数据库迁移
 
-当前项目已经执行 001–004，不要重复初始化。首次部署到空数据库时，以数据库所有者身份按顺序完整执行：
+当前项目已经执行 001–008，不要重复初始化。首次部署到空数据库时，以数据库所有者身份按顺序完整执行：
 
 ```text
 supabase/migrations/001_initial_schema.sql
 supabase/migrations/002_phase_2_5_fixes.sql
 supabase/migrations/003_ai_novel_builder.sql
 supabase/migrations/004_ai_chapter_generation.sql
+supabase/migrations/005_chapter_memory_analysis.sql
+supabase/migrations/006_chapter_memory_version_source.sql
+supabase/migrations/007_chapter_memory_timeline_fallback.sql
+supabase/migrations/008_chapter_memory_manual_review.sql
 ```
 
-文件内包含 `begin;` / `commit;`，需整体执行。001 创建表、RLS、来源约束和事务 RPC；002 将业务版本冲突从 `40001` 改为 `PT409`，避免托管 PostgREST 把永久冲突反复重试。只运行过 001 的环境需按顺序补上 002、003、004。
+文件内包含 `begin;` / `commit;`，需整体执行。001 创建表、RLS、来源约束和事务 RPC；002 将业务版本冲突从 `40001` 改为 `PT409`，避免托管 PostgREST 把永久冲突反复重试。旧环境需按顺序补上尚未执行的迁移。
 
 003 增加 AI 构建元数据、不可重复确认的回执、Bible 宏观阶段与完整资料的事务 RPC。004 增加章节预览、生成日志关联字段和原子确认 RPC。仅执行尚未应用的迁移，不修改旧迁移或删除旧数据。DeepSeek 配置和验收见 [PHASE_3A.md](PHASE_3A.md) 与 [PHASE_3C_0.md](PHASE_3C_0.md)。
+
+005 增加章节记忆任务、摘要字段与原子分析写入；006 修正修改正文后的版本来源；007 在分析未给出时间线时从关键事件生成记录；008 为已分析正文修改增加人工核对状态与带版本检查的确认入口。Phase 3C_1 的验收与限制见 [PHASE_3C_1.md](PHASE_3C_1.md)。
 
 这是初始建库迁移，不是可重复运行的初始化按钮。成功执行一次后，不要反复粘贴执行；若提示表已存在，先确认目标项目和迁移历史，不要删除现有表来消除报错。
 

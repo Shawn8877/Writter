@@ -9,8 +9,12 @@ export function chapterDatabaseError(error) {
     CONTEXT_CHANGED: "小说设定或章节已变化，请刷新页面后重新生成。当前正文未被覆盖。",
     DUPLICATE_REQUEST: "这次请求已提交，未再次调用 AI。请等待结果或明确重新生成。",
     AI_BUSY: "已有 AI 任务正在运行，请等待它完成。",
+    LATER_MEMORY_EXISTS: "后续章节已更新记忆，无法自动重算旧章节。请先人工核对连续性资料。",
+    MEMORY_REVIEW_REQUIRED: "本章需要人工核对摘要、人物、记忆和时间线，确认后才能继续创作。",
+    MEMORY_REVIEW_NOT_REQUIRED: "本章当前不需要人工核对，请刷新分析状态。",
+    REVISION_CONFLICT: "章节已变化，请重新核对最新正文后确认。",
   };
-  if (error.code === "PT429") throw new AiError("AI_RATE_LIMIT", "每小时最多生成 6 次（与小说构建共用），请稍后再试。", 429);
+  if (error.code === "PT429") throw new AiError("AI_RATE_LIMIT", "每小时最多调用 AI 6 次（小说构建、正文和记忆分析共用），请稍后再试。", 429);
   if (error.code === "PT409") throw new AiError(error.message in messages ? error.message : "CONTEXT_CHANGED", messages[error.message] || messages.CONTEXT_CHANGED, 409);
   if (["P0002", "42501"].includes(error.code)) throw new AiError("NOT_FOUND", "章节不存在或不属于当前账号。", 404);
   throw new AiError("AI_DATABASE_ERROR", "读取或保存云端数据失败，请保留预览并稍后重试。", 503);
@@ -25,25 +29,36 @@ export async function buildChapterContext(supabase, { novelId, chapterId, expect
   if (chapter.revision !== expectedRevision) throw new AiError("CONTEXT_CHANGED", "章节已变化，请刷新后重试。", 409);
   if (!chapter.outline.trim()) throw new AiError("OUTLINE_REQUIRED", "请先填写并保存本章大纲，再生成正文。", 400);
   if (novel.chapter_word_target < 100 || novel.chapter_word_target > 6000) throw new AiError("CHAPTER_TARGET_LIMIT", "当前单章生成支持 100–6000 字，请先调整小说的单章目标字数。", 400);
-  const [bible, characters, world, memories, previous, volume] = await Promise.all([
+  const [bible, characters, world, memories, previous, volume, unresolvedForeshadowing, unfinished] = await Promise.all([
     data(supabase.from("novel_bible").select("*").eq("novel_id", novelId).maybeSingle()),
     data(supabase.from("characters").select("name,aliases,role,personality,description,background,goals,relationships,abilities,current_state,is_alive").eq("novel_id", novelId).order("created_at").limit(81)),
     data(supabase.from("world_entries").select("category,name,content,metadata").eq("novel_id", novelId).order("created_at").limit(121)),
-    data(supabase.from("memory_items").select("memory_type,title,content,importance,metadata,chapter_id").eq("novel_id", novelId).eq("status", "active").order("importance", { ascending: false }).order("created_at", { ascending: false }).limit(80)),
+    data(supabase.from("memory_items").select("memory_type,title,content,importance,chapter_id").eq("novel_id", novelId).eq("status", "active").order("importance", { ascending: false }).order("updated_at", { ascending: false }).limit(80)),
     data(supabase.from("chapters").select("id,title,sort_order,summary").eq("novel_id", novelId).lt("sort_order", chapter.sort_order).order("sort_order", { ascending: false }).limit(5)),
     chapter.volume_id ? data(supabase.from("volumes").select("title,summary,chapter_range,beats").eq("novel_id", novelId).eq("id", chapter.volume_id).maybeSingle()) : null,
+    data(supabase.from("memory_items").select("title,content,importance,chapter_id").eq("novel_id", novelId).eq("memory_type", "foreshadowing").eq("status", "active").order("importance", { ascending: false }).order("updated_at", { ascending: false }).limit(40)),
+    data(supabase.from("chapter_memory_jobs").select("chapter_id,status").eq("novel_id", novelId).neq("chapter_id", chapterId).in("status", ["pending", "running", "failed", "stale", "needs_review"]).limit(1)),
   ]);
   if (!bible || ![bible.core_premise, bible.synopsis, bible.main_conflict].some((v) => v?.trim())) throw new AiError("BIBLE_REQUIRED", "请先完善小说核心设定，再生成章节。", 400);
   if (characters.length > 80 || world.length > 120) throw new AiError("CONTEXT_TOO_LARGE", "人物或世界观资料超出本阶段容量，请精简相关资料后再试。", 413);
-  const summaries = previous.length ? await data(supabase.from("chapter_summaries").select("chapter_id,summary,key_events,character_changes,new_information,foreshadowing_added,foreshadowing_resolved").eq("novel_id", novelId).in("chapter_id", previous.map((c) => c.id))) : [];
+  const [summaries, summaryJobs] = previous.length ? await Promise.all([
+    data(supabase.from("chapter_summaries").select("chapter_id,summary,key_events,character_changes,new_information,foreshadowing_added,foreshadowing_resolved,next_chapter_requirements").eq("novel_id", novelId).in("chapter_id", previous.map((c) => c.id))),
+    data(supabase.from("chapter_memory_jobs").select("chapter_id,status").eq("novel_id", novelId).in("chapter_id", previous.map((c) => c.id))),
+  ]) : [[], []];
+  // A manual review does not validate old AI projections. Use the author's
+  // current manual summary, without replaying superseded events/requirements.
+  const reviewed = new Set(summaryJobs.filter((job) => job.status === "reviewed").map((job) => job.chapter_id));
+  const currentSummaries = summaries.filter((summary) => !reviewed.has(summary.chapter_id));
+  if (unfinished.length) throw new AiError("MEMORY_NOT_READY", "其他章节的记忆尚未更新完成，请先完成或重试记忆分析。", 409);
   const previousChapter = previous.length ? await data(supabase.from("chapters").select("title,content,sort_order").eq("novel_id", novelId).eq("id", previous[0].id).maybeSingle()) : null;
   const context = {
     novel: fields(novel, ["title", "genre", "style", "premise", "protagonist", "master_outline", "chapter_word_target"]),
     bible: fields(bible, ["core_premise", "world_rules", "story_tone", "writing_style", "protagonist_arc", "main_conflict", "power_system", "romance_direction", "ending_direction", "forbidden_changes", "synopsis", "storyline", "antagonist", "story_stages"]),
     chapter: fields(chapter, ["title", "outline", "sort_order"]), volume, characters, world, memories,
     previousChapter,
-    recentSummaries: previous.map((c) => ({ title: c.title, number: c.sort_order, summary: c.summary, ...summaries.find((s) => s.chapter_id === c.id) })).reverse(),
-    continuityRequirements: bible.builder_metadata?.continuityRequirements || bible.builder_metadata?.specialRequirements || [],
+    recentSummaries: previous.map((c) => ({ title: c.title, number: c.sort_order, summary: c.summary, ...currentSummaries.find((s) => s.chapter_id === c.id) })).reverse(),
+    continuityRequirements: [...(bible.builder_metadata?.continuityRequirements || bible.builder_metadata?.specialRequirements || []), ...(currentSummaries.find((s) => s.chapter_id === previous[0]?.id)?.next_chapter_requirements || [])],
+    unresolvedForeshadowing,
   };
   const contextBytes = Buffer.byteLength(JSON.stringify(context), "utf8");
   if (contextBytes > CHAPTER_CONTEXT_BYTES) throw new AiError("CONTEXT_TOO_LARGE", "章节上下文过长，请精简设定、重要记忆或上一章正文后重试。没有调用 AI。", 413);
