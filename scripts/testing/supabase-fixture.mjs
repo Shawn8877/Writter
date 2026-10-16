@@ -24,8 +24,18 @@ const rpcParameters = {
   studio_finish_chapter_memory: ["p_generation_id", "p_lease_token", "p_result", "p_error_type", "p_metrics"],
   studio_fail_idle_chapter_memory: ["p_novel_id", "p_chapter_id", "p_error_type"],
   studio_acknowledge_chapter_memory: ["p_novel_id", "p_chapter_id", "p_expected_revision"],
+  studio_begin_outline_generation: ["p_request_id", "p_lease_token", "p_input_hash", "p_model", "p_novel_id", "p_chapter_number", "p_novel_revision", "p_chapter_revision"],
+  studio_finish_outline_generation: ["p_generation_id", "p_lease_token", "p_status", "p_model", "p_input_tokens", "p_output_tokens", "p_latency_ms", "p_provider_request_id", "p_error_type", "p_chapter_number", "p_title", "p_outline"],
+  studio_confirm_outline_generation: ["p_generation_id"],
+  studio_start_generation_run: ["p_novel_id", "p_count", "p_mode"],
+  studio_claim_generation_step: ["p_run_id", "p_lease_token", "p_request_id", "p_manual_approve"],
+  studio_finish_generation_step: ["p_run_id", "p_lease_token", "p_action", "p_generation_id", "p_error_type"],
+  studio_reconcile_generation_run: ["p_run_id"],
+  studio_cancel_generation_run: ["p_run_id"],
+  studio_retry_generation_run: ["p_run_id"],
+  studio_pause_generation_run: ["p_run_id", "p_error_type"],
 };
-const tableNames = new Set(["profiles", "novels", "volumes", "chapters", "chapter_versions", "characters", "world_entries", "timeline_events", "novel_bible", "chapter_summaries", "memory_items", "chapter_memory_jobs"]);
+const tableNames = new Set(["profiles", "novels", "volumes", "chapters", "chapter_versions", "characters", "world_entries", "timeline_events", "novel_bible", "chapter_summaries", "memory_items", "chapter_memory_jobs", "generation_runs", "generation_run_chapters", "ai_outline_previews", "ai_chapter_previews", "ai_generation_logs"]);
 const encode = (data) => Buffer.from(JSON.stringify(data)).toString("base64url");
 const errorResult = (code, message) => ({ code, error_code: code, message, msg: message });
 

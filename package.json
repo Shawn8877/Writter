@@ -18,6 +18,8 @@
     "test:ai": "node --import ./scripts/testing/register-server.mjs scripts/test-ai.mjs",
     "test:chapters": "node --import ./scripts/testing/register-server.mjs scripts/test-chapters.mjs",
     "test:memory": "node --import ./scripts/testing/register-server.mjs scripts/test-chapter-memory.mjs",
+    "test:runs": "node --import ./scripts/testing/register-server.mjs scripts/test-generation-runs.mjs",
+    "test:browser:runs": "node scripts/testing/browser-generation-runs.mjs",
     "test:browser:memory": "node --import ./scripts/testing/register-server.mjs scripts/testing/browser-chapter-memory.mjs",
     "test:browser:chapters": "node scripts/testing/browser-chapters.mjs",
     "test:browser:ai": "node scripts/testing/browser-ai-builder.mjs",

@@ -21,4 +21,7 @@ try {
   const results = await db.exec(await readFile(new URL("../supabase/tests/rls.sql", import.meta.url), "utf8"));
   for (const result of results) for (const row of result.rows || []) if (row.result) console.log(row.result);
   console.log("Local PostgreSQL engine validation passed. Supabase Auth/network deployment still requires live-project testing.");
+} catch (error) {
+  console.error(`Database validation failed: ${error.message} (position ${error.position || "unknown"})`);
+  process.exitCode = 1;
 } finally { await db.close(); }

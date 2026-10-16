@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Save, ArrowRight, RotateCcw, Expand, WandSparkles,
+  Save, RotateCcw, Expand, WandSparkles,
   GitBranch, FileText, Check, AlignLeft, BookOpen, History,
   Copy, CloudUpload, LoaderCircle,
 } from "lucide-react";
@@ -317,7 +317,6 @@ export function ChapterEditor({ chapter, onDirtyChange }) {
         <ChapterGeneration novelId={novelId} chapterId={chapterId} revision={view.revision}
           disabled={!view.ready || busy || dirty || view.conflict} hasContent={draft.body !== ""}
           onActiveChange={setGenerationActive} onSaved={acceptGenerated} />
-        <AiButton className="button button-ghost button-small" icon={ArrowRight}>生成下一章</AiButton>
         <AiButton className="button button-ghost button-small" icon={RotateCcw}>重新生成</AiButton>
       </div>
       <ChapterMemoryStatus novelId={novelId} chapterId={chapterId} revision={view.revision} hasContent={view.saved.body !== ""} onStatus={setMemoryStatus} />

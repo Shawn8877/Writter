@@ -91,6 +91,22 @@ Dashboard、创建页、小说工作台有服务端 layout 保护。小说 layou
 | `/api/ai/chapters/generate` | POST | 读取上下文、生成正文、返回进度与受保护预览 |
 | `/api/ai/chapters/confirm` | POST | 按 generationId 原子保存正文和 AI 版本，拒绝覆盖 |
 | `/api/ai/chapters/memory` | GET / POST | 查询分析状态 / 明确重试章节记忆分析 |
+| `/api/ai/chapters/next-outline` | POST | 生成下一章大纲预览 / 明确确认并保存 |
+| `/api/ai/generation-runs` | GET / POST | 查询当前小说最近任务 / 创建 1、3、5、10 章任务 |
+| `/api/ai/generation-runs/[id]` | GET | 持久化进度、预览和过期租约恢复 |
+| `/api/ai/generation-runs/[id]/advance` | POST | 领取并启动一个短任务步骤；单章确认时带 `manualApprove` |
+| `/api/ai/generation-runs/[id]/cancel` | POST | 取消并保留已保存章节 |
+| `/api/ai/generation-runs/[id]/retry` | POST | 从失败/暂停位置继续 |
+
+## Phase 3C_2：下一章与连续创作
+
+`generation_runs` 保存小说、账号、模式、起点、目标数量、当前位置、状态、阶段和短任务租约；`generation_run_chapters` 保存每章的编号、请求/预览 ID 和进度。PostgreSQL 部分唯一索引保证同一小说只有一个未解决的任务，章节正编号唯一索引阻止并发重复编号。任务表开启 owner RLS，只允许用户直接读取；创建、领取、完成、重试和取消通过检查 `auth.uid()` 的事务 RPC 进行。009 为新增结构，010 恢复原有人工核对记忆保护，011 让取消等待当前章记忆完成；既有迁移文件保持不变。
+
+下一章的起点由最后一个有正文的章节确定。已有且确认的大纲可直接使用；缺失大纲先调用 DeepSeek 生成 `ai_outline_previews`，用户确认后才在事务里创建或更新章节。手工保存的大纲视为作者已确认。启动任务前检查 Bible、人物、前章正文、未完成记忆、目标章节正文和全部大纲；连续模式最多 10 章。原有“生成本章”仍可独立使用，但运行中的任务会阻止它抢写相同章节。
+
+每次 `/advance` 只领取一个数据库租约，在 Next `after()` 中至多执行一次 DeepSeek 正文或记忆调用。正文使用现有 `chapter-context` 每章重新取 Bible、人物状态、当前大纲、上一章正文、最近摘要、重要记忆和未回收伏笔。生成结果先落受保护的 preview；连续模式确认后复用原子保存 RPC，单章模式等待用户确认。每章必须有 `ai_generated` 版本、成功的 `chapter_memory_jobs` 和对应 `chapter_summaries` 才推进下一章。记忆失败只重试分析，不重写正文。任务进度不依赖 Node 内存或本地文件。
+
+页面每 3 秒短轮询。关闭浏览器不会抹掉数据库任务；当前服务端步骤可继续完成，后续步骤在重新打开后点击“继续任务”继续。5 分钟后未结束的租约会按已有日志/预览/版本证据核对：已完成的步骤恢复到正确阶段，无法确认的步骤标失败并要求显式重试，不会自动重复收费调用。取消不删除已保存章节。基础一致性检查拦截缺资料、未完成前章、已有正文、大纲变更，以及 Bible 明确禁止复活时的大纲硬冲突；复杂语义冲突仍需作者审阅。
 
 ## AI 构建的请求与保存边界
 

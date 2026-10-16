@@ -7,6 +7,7 @@ import { useNovel } from "./novel-context";
 import { PageHeading, EmptyState } from "@/components/ui";
 import { RecordForm } from "./record-form";
 import { ChapterEditor } from "./chapter-editor";
+import { GenerationRunPanel } from "./generation-run-panel";
 import { countWords } from "@/lib/domain/novel";
 
 export function ChaptersView() {
@@ -68,6 +69,7 @@ export function ChaptersView() {
           新增章节
         </button>
       </PageHeading>
+      <GenerationRunPanel novel={novel} onViewChapter={(id) => { if (id) select(id); }} />
       {novel.chapters.length ? (
         <div className="chapters-workbench panel">
           <aside className="chapter-list">

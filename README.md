@@ -41,7 +41,9 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-public-key
 
 **Phase 3C_1 接入章节自动记忆分析。** AI 正文确认保存后，在后台生成 100–300 字摘要，更新人物状态、事实记忆、时间线、伏笔和下一章连续性要求。首次分析失败保留正文与版本，可单独重试；相同正文成功后不重复调用模型。修改已分析正文时需要人工核对并明确确认，避免保留已撤销的事实；下一章使用核对后的资料和手动摘要。其他章节存在未完成分析或待核对资料时会提示先处理。需按顺序应用 005–008 迁移；既有测试项目已经执行。真实两章验收包含失败恢复，模型输出仍需审阅，详见 [章节记忆报告](docs/PHASE_3C_1.md)。
 
-当前只支持单章 100–6000 字、有限上下文。一次正文生成与一次记忆分析各计一次 AI 调用，共用每账号每小时 6 次限额。生成下一章、重新生成、扩写、润色、修改剧情仍为入口占位；逐章大纲、Embedding、RAG 和连续写作未实现。版本恢复、密码找回与头像／封面上传也未实现。
+**Phase 3C_2 已开放“生成下一章”和连续创作 3/5/10 章。** 系统按最后一章正文自动找下一章；缺大纲时先生成大纲预览，经确认后才能写正文。单章正文继续走预览和手动确认；连续模式需要一次性确认预计调用次数，随后每章独立生成、保存 `ai_generated` 版本并更新记忆，前一章记忆成功后才开始下一章。进度保存在 Supabase，刷新、断网和关闭浏览器后可找回；失败只重试当前章节，取消保留已写章节。需按顺序应用 009–011 新迁移，详见 [连续创作报告](docs/PHASE_3C_2.md)。
+
+当前单章支持 100–6000 字、有限上下文。普通 AI 操作仍受每账号每小时 6 次限额；明确确认的连续任务最多 10 章，并对该任务的正文/记忆调用使用每小时 24 次上限。重新生成、扩写、润色、修改剧情仍为入口占位；Embedding、RAG、版本恢复、密码找回与头像／封面上传未实现。
 
 ## 页面
 
@@ -56,7 +58,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-public-key
 | `/novel/[id]/characters` | 人物 | 小说所有者 |
 | `/novel/[id]/world` | 世界观、地点、物品、能力、伏笔 | 小说所有者 |
 | `/novel/[id]/timeline` | 时间线 | 小说所有者 |
-| `/novel/[id]/chapters` | 正文、摘要、自动保存与版本 | 小说所有者 |
+| `/novel/[id]/chapters` | 正文、摘要、版本、下一章与连续创作任务 | 小说所有者 |
 | `/novel/[id]/memory` | 长期记忆及来源 | 小说所有者 |
 
 小说 ID 来自数据库 UUID，不再使用固定示例路由。
@@ -70,6 +72,7 @@ npm run test:repository
 npm run test:ai
 npm run test:chapters
 npm run test:memory
+npm run test:runs
 npm run build
 npm run test:security
 npm start
@@ -79,6 +82,8 @@ npm start
 
 AI 测试不调用收费接口。`npm run test:browser:ai` 使用独立的 SQL/Auth/DeepSeek 响应样例；`npm run test:browser:ai:cloud -- --allow-cloud-test-writes` 使用明确标注的方案样例和真实 Supabase。两者均需 Playwright + Chrome，可通过 `PLAYWRIGHT_MODULE` 指向已有 Playwright。配置 DeepSeek 密钥并重启网站后，可显式运行 `npm run test:ai:smoke -- --allow-cloud-test-writes`，仅构建一次真实 DeepSeek 方案并验收保存；操作前阅读 [验收配置和范围](docs/PHASE_3A.md)。
 
+连续创作夹具浏览器验收为 `npm run test:browser:runs`；真实三章验收需明确执行 `npm run test:browser:runs -- --real-ai-cloud --allow-cloud-test-writes`，会使用独立测试账号并产生真实 DeepSeek 用量。真实任务中断后用同一证据目录加 `--resume artifacts/phase3c2/browser-real-...` 恢复，避免重写已生成章节。测试范围与结果见 [Phase 3C_2 报告](docs/PHASE_3C_2.md)。
+
 真实项目另提供 `npm run test:cloud -- --allow-cloud-test-writes`，需要独立测试项目和两个真实测试账号；准备方式见 [云端验收脚本说明](docs/SUPABASE_SETUP.md#8-真实双账号-sdk-验收脚本)。该脚本会创建并保留 A/B 样本，仅删除本次创建的级联测试小说；它不能代替跨浏览器、断网草稿和自动保存界面验收。
 
 ## 数据与资料
@@ -87,6 +92,7 @@ AI 测试不调用收费接口。`npm run test:browser:ai` 使用独立的 SQL/A
 
 - [配置 Supabase 与双账号权限验证](docs/SUPABASE_SETUP.md)
 - [Phase 3A 架构、数据库映射、验收与限制](docs/PHASE_3A.md)
+- [Phase 3C_2 下一章、连续创作与恢复验收](docs/PHASE_3C_2.md)
 - [Phase 2.5 云端验收状态与待办](docs/PHASE_2_5.md)
 - [第二阶段功能、表结构、变更文件、测试与第三阶段建议](docs/PHASE_2.md)
 - [当前架构与数据约定](docs/ARCHITECTURE.md)
