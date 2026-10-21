@@ -10,6 +10,7 @@ export const generationRunRepository = {
   start: (novelId, count, mode) => post("/api/ai/generation-runs", { novelId, count, mode }),
   advance: (id, manualApprove = false) => post(`/api/ai/generation-runs/${encodeURIComponent(id)}/advance`, { manualApprove }),
   retry: (id) => post(`/api/ai/generation-runs/${encodeURIComponent(id)}/retry`),
+  continueCritical: (id) => post(`/api/ai/generation-runs/${encodeURIComponent(id)}/continue`),
   cancel: (id) => post(`/api/ai/generation-runs/${encodeURIComponent(id)}/cancel`),
   generateOutline: (novelId, chapterNumber) => post("/api/ai/chapters/next-outline", { action: "generate", requestId: crypto.randomUUID(), novelId, chapterNumber }),
   confirmOutline: (generationId) => post("/api/ai/chapters/next-outline", { action: "confirm", generationId }),

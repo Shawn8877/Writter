@@ -8,13 +8,14 @@ import { prepareChapterMemoryResult } from "../src/lib/ai/services/chapter-memor
 import { startGenerationRun, getGenerationRun, claimGenerationStep, processGenerationStep, retryGenerationRun, cancelGenerationRun } from "../src/lib/ai/services/generation-run-service.js";
 import { generateNextOutline, confirmNextOutline } from "../src/lib/ai/services/chapter-outline-service.js";
 import { AiError } from "../src/lib/ai/errors.js";
+import { reviewDependencies } from "./testing/chapter-review-fixtures.mjs";
 
 const fixture = await startSupabaseFixture({ port: 43081, quiet: true });
 const { db } = fixture;
 const config = { model: "deepseek-flash", apiKey: "fixture-only", timeoutMs: 1000 };
 const writer = { getConfig: () => config, write: async () => ({ content: memoryProse, wordCount: [...memoryProse].length, model: config.model, inputTokens: 850, outputTokens: 600, providerRequestId: "fixture_writer" }) };
 const analyzer = { getConfig: () => config, analyze: async (context) => ({ result: prepareChapterMemoryResult(memoryAnalysisFixture(context), context), model: config.model, inputTokens: 700, outputTokens: 450, providerRequestId: "fixture_memory" }) };
-const deps = { chapter: writer, memoryDependencies: analyzer };
+const deps = { chapter: writer, memoryDependencies: analyzer, reviewDependencies };
 const checks = [];
 async function check(name, fn) { await fn(); checks.push(name); console.log(`PASS: ${name}`); }
 async function account(n) {
@@ -33,6 +34,11 @@ async function step(client, runId, expected) {
   const claim = await claimGenerationStep(client, runId);
   assert.equal(claim.action, expected);
   await processGenerationStep(client, claim, deps);
+  if (expected === "memory") {
+    const review = await claimGenerationStep(client, runId);
+    assert.equal(review.action,"review");
+    await processGenerationStep(client,review,deps);
+  }
   return getGenerationRun(client, runId);
 }
 try {
@@ -114,6 +120,7 @@ try {
     await processGenerationStep(user.client,confirming,deps);
     const analyzing=await claimGenerationStep(user.client,runId); assert.equal(analyzing.action,"memory");
     await processGenerationStep(user.client,analyzing,deps);
+    await step(user.client,runId,"review");
     const final=await getGenerationRun(user.client,runId); assert.equal(final.status,"cancelled"); assert.equal(final.chapters[0].status,"completed"); assert.equal(final.chapters[1].status,"pending");
   });
   await check("explicit Bible and dead-character conflict pauses before any paid writer call", async () => {
@@ -152,6 +159,7 @@ try {
     await retryGenerationRun(user.client,runId);
     const retry=await claimGenerationStep(user.client,runId); assert.equal(retry.action,"memory");
     await processGenerationStep(user.client,retry,deps);
+    await step(user.client,runId,"review");
     assert.equal((await getGenerationRun(user.client,runId)).chapters[0].status,"completed");
     assert.equal((await db.query("select count(*)::int as n from chapter_versions where chapter_id=$1",[seed.chapterId])).rows[0].n,1);
   });

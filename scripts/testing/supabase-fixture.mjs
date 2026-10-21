@@ -34,8 +34,14 @@ const rpcParameters = {
   studio_cancel_generation_run: ["p_run_id"],
   studio_retry_generation_run: ["p_run_id"],
   studio_pause_generation_run: ["p_run_id", "p_error_type"],
+  studio_begin_chapter_review: ["p_novel_id","p_chapter_id","p_chapter_version_id","p_chapter_revision","p_content_hash","p_lease_token","p_model","p_prompt_version","p_manual","p_generation_run_id","p_novel_revision"],
+  studio_finish_chapter_review: ["p_review_id","p_lease_token","p_result","p_error_type","p_metrics"],
+  studio_retry_chapter_review: ["p_review_id","p_lease_token"],
+  studio_decide_review_finding: ["p_review_id","p_finding_index","p_decision"],
+  studio_continue_critical_run: ["p_run_id"],
 };
 const tableNames = new Set(["profiles", "novels", "volumes", "chapters", "chapter_versions", "characters", "world_entries", "timeline_events", "novel_bible", "chapter_summaries", "memory_items", "chapter_memory_jobs", "generation_runs", "generation_run_chapters", "ai_outline_previews", "ai_chapter_previews", "ai_generation_logs"]);
+tableNames.add("chapter_reviews");
 const encode = (data) => Buffer.from(JSON.stringify(data)).toString("base64url");
 const errorResult = (code, message) => ({ code, error_code: code, message, msg: message });
 
@@ -208,7 +214,12 @@ export async function startSupabaseFixture({ port = 43001, appPort = 43000, quie
       const offset = Math.max(0, Number(url.searchParams.get("offset") || headerRange?.[1] || 0));
       const limit = Math.min(10000, Math.max(1, Number(url.searchParams.get("limit") || (headerRange ? Number(headerRange[2]) - Number(headerRange[1]) + 1 : 1000))));
       if (!Number.isInteger(offset) || !Number.isInteger(limit)) throw new Error("Unsupported fixture range");
-      const result = await authenticatedQuery(account, () => db.query(`select t.* from public.${table} t${filters.length ? ` where ${filters.join(" and ")}` : ""}${order} limit ${limit} offset ${offset}`, values));
+      const selection = url.searchParams.get("select") || "*";
+      const columns = selection === "*" ? "t.*" : selection.split(",").map((column) => {
+        if (!/^[a-z_]+$/.test(column)) throw new Error("Unsupported fixture selection");
+        return `t.${column}`;
+      }).join(",");
+      const result = await authenticatedQuery(account, () => db.query(`select ${columns} from public.${table} t${filters.length ? ` where ${filters.join(" and ")}` : ""}${order} limit ${limit} offset ${offset}`, values));
       response.setHeader("Content-Range", `${offset}-${Math.max(offset, offset + result.rows.length - 1)}/*`);
       if (request.headers.accept?.includes("application/vnd.pgrst.object+json")) {
         if (result.rows.length !== 1) return send(406, { code: "PGRST116", details: `The result contains ${result.rows.length} rows`, hint: null, message: "JSON object requested, multiple (or no) rows returned" });

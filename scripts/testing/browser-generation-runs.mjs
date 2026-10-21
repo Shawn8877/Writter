@@ -11,6 +11,7 @@ import { startSupabaseFixture } from "./supabase-fixture.mjs";
 import { chapterFixtureRows, seedChapterSql } from "./chapter-fixtures.mjs";
 import { memoryProse, memoryAnalysisFixture } from "./chapter-memory-fixtures.mjs";
 import { responseFixture, novelPlan, builderInput } from "./novel-builder-fixtures.mjs";
+import { reviewFixture } from "./chapter-review-fixtures.mjs";
 
 const real = process.argv.includes("--real-ai-cloud");
 if (real) assert.ok(process.argv.includes("--allow-cloud-test-writes"), "Explicit cloud write flag required");
@@ -44,6 +45,7 @@ try {
       const body=JSON.parse(raw); const parsed=JSON.parse(body.input[1].content);
       const output=responseFixture(novelPlan(builderInput()));
       if(body.text?.format?.name==="chapter_memory_analysis") { memoryCalls++; output.output[0].content[0].text=JSON.stringify(memoryAnalysisFixture(parsed)); }
+      else if(body.text?.format?.name==="chapter_review") { output.output[0].content[0].text=JSON.stringify(reviewFixture()); }
       else { writerCalls++; output.output[0].content[0].text=memoryProse; }
       await pause(900);
       response.setHeader("Content-Type","application/json"); response.end(JSON.stringify(output));
@@ -90,7 +92,7 @@ try {
   await login(page,"a"); await page.goto(novelUrl);
   if(!resume) await check("continuous 3 confirmation shows range and call estimate",async()=>{
     await page.getByRole("button",{name:"连续创作",exact:true}).click();
-    await page.getByText("预计正文 3 次、记忆分析 3 次 AI 调用。").waitFor();
+    await page.getByText("预计正文、记忆分析、AI 编辑审核各 3 次调用。").waitFor();
     await page.getByRole("button",{name:"继续",exact:true}).click();
     await page.getByRole("heading",{name:"确认连续创作"}).waitFor();
     assert.equal((await clients.a.from("generation_runs").select("id").eq("novel_id",seed.novelId)).data?.length||0,0);

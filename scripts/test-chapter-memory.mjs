@@ -11,6 +11,7 @@ import { prepareChapterMemoryResult } from "../src/lib/ai/services/chapter-memor
 import { buildChapterContext } from "../src/lib/ai/services/chapter-context.js";
 import { createDeepSeekClient } from "../src/lib/ai/deepseek.js";
 import { AiError } from "../src/lib/ai/errors.js";
+import { memoryEvidenceCatalog, resolveMemoryEvidence } from "../src/lib/ai/services/memory-evidence.js";
 
 const fixture = await startSupabaseFixture({ port: 43071, quiet: true }); const db = fixture.db; const results = [];
 const config = { model: "deepseek-flash", apiKey: "fixture-only", timeoutMs: 1000 };
@@ -37,7 +38,10 @@ try {
     await assert.rejects(buildChapterContext(a, { novelId: seed.novelId, chapterId: seed.secondId, expectedRevision: 1 }), (e) => e.code === "MEMORY_NOT_READY");
   });
   await check("native strict JSON Schema; invalid schema, foreign references and invented evidence fail before writes", async () => {
-    const response = responseFixture(novelPlan(builderInput())); response.output[0].content[0].text = JSON.stringify(memoryAnalysisFixture(prepared.context));
+    const passages=memoryEvidenceCatalog(prepared.context.chapter.content);
+    assert.ok(passages.every(passage=>passage.text.length<=480&&prepared.context.chapter.content.includes(passage.text)));
+    assert.throws(()=>resolveMemoryEvidence({keyEvents:[{evidence:"E9999"}]},passages));
+    const response = responseFixture(novelPlan(builderInput())); response.output[0].content[0].text = JSON.stringify(memoryAnalysisFixture({...prepared.context,evidencePassages:passages}));
     const client = createDeepSeekClient(config); client.fetch = async (url, options) => { const body = JSON.parse(options.body); assert.equal(body.text.format.type, "json_schema"); assert.equal(body.text.format.strict, true); assert.equal(body.text.format.name, "chapter_memory_analysis"); assert.ok(body.text.format.schema.required.includes("nextChapterRequirements")); return Response.json(response); };
     const r = await analyzeChapterMemory(prepared.context, { config, client }); assert.ok(r.result.chapterSummary.length >= 100);
     const annotated = memoryAnalysisFixture(prepared.context); annotated.characterChanges[0].newState.age = "999"; annotated.characterChanges[0].newState.name = "伪造姓名";

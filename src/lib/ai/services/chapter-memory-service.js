@@ -9,13 +9,18 @@ import { buildChapterMemoryContext } from "../context/chapter-memory-context-bui
 import { prepareChapterMemoryResult } from "./chapter-memory-mapper.js";
 import { chapterDatabaseError } from "./chapter-context.js";
 import { inputHash } from "./builder-workflow.js";
+import { memoryEvidenceCatalog, memoryEvidenceSchema, resolveMemoryEvidence } from "./memory-evidence.js";
 
 export async function analyzeChapterMemory(context, { config = getAiConfig(), client = createDeepSeekClient(config) } = {}) {
   let metadata;
   try {
-    const response = await client.responses.create({ model: config.model, input: chapterMemoryMessages(context), stream: false,
+    const passages = memoryEvidenceCatalog(context.chapter.content);
+    const schema = memoryEvidenceSchema(chapterMemoryJsonSchema, passages);
+    const messages = chapterMemoryMessages({ ...context, evidencePassages: passages });
+    if (Buffer.byteLength(JSON.stringify({ messages, schema }), "utf8") > 180000) throw new AiError("CONTEXT_TOO_LARGE", "记忆分析上下文过长，请整理本章及资料后重试。", 413);
+    const response = await client.responses.create({ model: config.model, input: messages, stream: false,
       reasoning: { effort: "low" }, max_output_tokens: 16000,
-      text: { format: { type: "json_schema", name: "chapter_memory_analysis", schema: chapterMemoryJsonSchema, strict: true } } });
+      text: { format: { type: "json_schema", name: "chapter_memory_analysis", schema, strict: true } } });
     metadata = { model: response.model || config.model, inputTokens: response.usage?.input_tokens ?? null, outputTokens: response.usage?.output_tokens ?? null, providerRequestId: response._request_id || response.id || null };
     if (response.output?.some((item) => item.content?.some((part) => part.type === "refusal"))) throw new AiError("AI_REFUSAL", "AI 无法分析当前正文，请检查内容后重试。", 422);
     if (response.status !== "completed") throw new AiError("AI_INCOMPLETE", "本章分析未完成，请重试。");
@@ -30,7 +35,7 @@ export async function analyzeChapterMemory(context, { config = getAiConfig(), cl
       error.validationIssues = [{ code: "invalid_json", path: [] }];
       throw error;
     }
-    const result = chapterMemorySchema.parse(parsed);
+    const result = resolveMemoryEvidence(chapterMemorySchema.parse(parsed), passages);
     return { result: prepareChapterMemoryResult(result, context), ...metadata };
   } catch (error) { const safe = normalizeAiError(error); safe.metadata = metadata; throw safe; }
 }

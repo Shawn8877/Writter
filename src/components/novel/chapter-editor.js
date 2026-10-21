@@ -12,6 +12,7 @@ import { useNovel } from "./novel-context";
 import { ChapterVersions } from "./chapter-versions";
 import { ChapterGeneration } from "./chapter-generation";
 import { ChapterMemoryStatus } from "./chapter-memory-status";
+import { ChapterReviewPanel } from "./chapter-review-panel";
 import { countWords, formatNumber } from "@/lib/domain/novel";
 import { useUnsavedChanges } from "@/lib/hooks/use-unsaved-changes";
 import { chapterDraftCache } from "@/lib/repositories/chapter-draft-cache";
@@ -320,6 +321,7 @@ export function ChapterEditor({ chapter, onDirtyChange }) {
         <AiButton className="button button-ghost button-small" icon={RotateCcw}>重新生成</AiButton>
       </div>
       <ChapterMemoryStatus novelId={novelId} chapterId={chapterId} revision={view.revision} hasContent={view.saved.body !== ""} onStatus={setMemoryStatus} />
+      <ChapterReviewPanel novelId={novelId} chapterId={chapterId} hasContent={view.saved.body !== ""} dirty={dirty || busy || view.conflict} />
       <div className="editor-tabs-row">
         <div className="content-tabs editor-tabs" role="group" aria-label="章节内容分类">
           {[["正文", AlignLeft], ["本章大纲", FileText], ["章节摘要", BookOpen]].map(([name, Icon]) => (

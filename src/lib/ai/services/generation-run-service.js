@@ -4,6 +4,7 @@ import { AiError, normalizeAiError } from "../errors.js";
 import { chapterDatabaseError } from "./chapter-context.js";
 import { generateChapterPreview, confirmChapterPreview } from "./chapter-workflow.js";
 import { updateChapterMemory } from "./chapter-memory-service.js";
+import { updateChapterReview } from "./chapter-review-service.js";
 
 const db = (result) => { chapterDatabaseError(result.error); return result.data; };
 const RUN_FIELDS = "id,novel_id,mode,start_chapter,target_chapters,current_index,status,stage,lease_at,cancel_requested,error_type,created_at,updated_at,completed_at";
@@ -107,10 +108,10 @@ async function finish(supabase, claim, action, generationId = null, errorType = 
   }));
 }
 
-// One invocation performs at most one provider call. The run and lease live in
+// One invocation performs one step (review may retry once). Run and lease live in
 // Postgres, so browser disconnection cannot erase committed chapter progress.
 export async function processGenerationStep(supabase, claim, dependencies = {}) {
-  if (!["generate", "confirm", "memory"].includes(claim.action)) return;
+  if (!["generate", "confirm", "memory", "review"].includes(claim.action)) return;
   try {
     if (claim.action === "generate") {
       const result = await (dependencies.generate || generateChapterPreview)(supabase, {
@@ -122,10 +123,16 @@ export async function processGenerationStep(supabase, claim, dependencies = {}) 
       await (dependencies.confirm || confirmChapterPreview)(supabase, { generationId: claim.generationId });
       return finish(supabase, claim, "confirmed");
     }
-    const result = await (dependencies.memory || updateChapterMemory)(supabase,
-      { novelId: claim.novelId, chapterId: claim.chapterId, retry: true }, dependencies.memoryDependencies || {});
-    if (result.status !== "succeeded") throw new AiError(result.errorType || "MEMORY_NOT_READY", "章节记忆未完成，请重试。", 409);
-    return finish(supabase, claim, "memory_succeeded");
+    if (claim.action === "memory") {
+      const result = await (dependencies.memory || updateChapterMemory)(supabase,
+        { novelId: claim.novelId, chapterId: claim.chapterId, retry: true }, dependencies.memoryDependencies || {});
+      if (result.status !== "succeeded") throw new AiError(result.errorType || "MEMORY_NOT_READY", "章节记忆未完成，请重试。", 409);
+      return finish(supabase, claim, "memory_succeeded");
+    }
+    const review = await (dependencies.review || updateChapterReview)(supabase,
+      { novelId: claim.novelId, chapterId: claim.chapterId, generationRunId: claim.runId, manual: claim.manualReview === true }, dependencies.reviewDependencies || {});
+    if (!["passed", "needs_review", "critical"].includes(review.status)) throw new AiError(review.errorType || "REVIEW_NOT_READY", "AI 编辑审核未完成，请重试。", 409);
+    return finish(supabase, claim, "review_succeeded");
   } catch (error) {
     const failure = normalizeAiError(error);
     try { await finish(supabase, claim, "failed", null, failure.code); }
@@ -147,5 +154,10 @@ export async function cancelGenerationRun(supabase, runId) {
 
 export async function retryGenerationRun(supabase, runId) {
   checked(await supabase.rpc("studio_retry_generation_run", { p_run_id: runId }));
+  return getGenerationRun(supabase, runId);
+}
+
+export async function continueCriticalGenerationRun(supabase, runId) {
+  checked(await supabase.rpc("studio_continue_critical_run", { p_run_id: runId }));
   return getGenerationRun(supabase, runId);
 }

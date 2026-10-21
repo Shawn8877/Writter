@@ -1,5 +1,13 @@
 # 架构与后续扩展
 
+## Phase 3D 增量：章节审核
+
+章节保存和记忆分析之后，由 Review Context Builder 选择有界资料，责任编辑 Prompt 经现有 DeepSeek Responses JSON Schema 返回报告，Service 执行结构、引用与证据校验后以租约 RPC 写入 chapter_reviews。审核表及所有API受当前用户和小说归属约束；结果附章节版本、正文hash、小说revision、模型、prompt版本及用量，资料变化拒绝过时结果。普通读取不暴露租约。
+
+Generation Run 增加 reviewing 阶段。passed/needs_review 完成当前章并前进，critical 保存正文后暂停；专门的 continue RPC 记录作者确认，再进入下一章。审核失败最多自动重试一次，之后只接受明确的人工重试。手动重新审核新增历史，接受/忽略建议只记录作者决定。详情、权限、限制与验收见 [Phase 3D](PHASE_3D.md)。
+
+012–014 新迁移保存审核、开放所有者读取小说版本号用于恢复，以及区分单章6次/连续36次的重试限额。恢复时复用同一任务、正文和资料版本的已完成报告，避免报告已保存但推进失败后重复调用。记忆分析为正文建立服务端片段编号目录，动态 Schema 限定证据编号，再还原为原文验证；模型不能自行提交新引文。
+
 ## 分层
 
 ```text

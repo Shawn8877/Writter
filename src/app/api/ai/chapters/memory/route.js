@@ -4,8 +4,9 @@ import { getApiAuth } from "@/lib/auth/server";
 import { createBuilderHandler } from "@/lib/ai/route-handler";
 import { AiError, aiErrorResponse } from "@/lib/ai/errors";
 import { acknowledgeChapterMemoryReview, getChapterMemoryStatus, updateChapterMemory } from "@/lib/ai/services/chapter-memory-service";
+import { updateChapterReview } from "@/lib/ai/services/chapter-review-service";
 export const runtime = "nodejs";
-export const maxDuration = 300;
+export const maxDuration = 900;
 const schema = z.object({ novelId: z.uuid(), chapterId: z.uuid() }).strict();
 const postSchema = z.union([
   schema.extend({ action: z.literal("retry").optional() }).strict(),
@@ -25,6 +26,9 @@ export const POST = createBuilderHandler(async (supabase, body) => {
   const status = await getChapterMemoryStatus(supabase, input);
   if (status.status === "none") throw new AiError("NOT_FOUND", "本章尚无自动分析任务。", 404);
   if (["succeeded", "running", "needs_review", "reviewed"].includes(status.status)) return status;
-  after(() => updateChapterMemory(supabase, { ...input, retry: true }));
+  after(async () => {
+    const memory = await updateChapterMemory(supabase, { ...input, retry: true });
+    if (memory.status === "succeeded") await updateChapterReview(supabase, input);
+  });
   return { status: "pending" };
 }, 4096);

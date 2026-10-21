@@ -1,6 +1,7 @@
 import "server-only";
 import { AiError } from "../errors.js";
 import { chapterMemorySchema } from "../schemas/chapter-memory-schema.js";
+import { matchedEvidence } from "./evidence.js";
 
 const normalized = (s) => s.normalize("NFKC").toLowerCase().replace(/[\s\p{P}\p{S}]/gu, "");
 function similarity(a, b) {
@@ -21,7 +22,11 @@ export function prepareChapterMemoryResult(raw, context) {
   const prose = context.chapter.content.replace(/\s/g, "");
   for (const [key, items] of Object.entries(result)) {
     if (key === "chapterSummary") continue;
-    for (const [index, item] of items.entries()) if (!prose.includes(item.evidence.replace(/\s/g, ""))) invalid("evidence_not_found", [key, index, "evidence"]);
+    for (const [index, item] of items.entries()) {
+      const evidence = matchedEvidence(context.chapter.content, item.evidence);
+      if (!evidence) invalid("evidence_not_found", [key, index, "evidence"]);
+      item.evidence = evidence;
+    }
   }
   const characters = structuredClone(context.characters);
   const touched = new Set();
