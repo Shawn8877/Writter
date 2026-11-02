@@ -52,10 +52,10 @@ export async function getGenerationRun(supabase, runId) {
 }
 
 export async function getLatestGenerationRun(supabase, novelId) {
-  const novel = db(await supabase.from("novels").select("id").eq("id", novelId).maybeSingle());
+  const novel = db(await supabase.from("novels").select("id,revision").eq("id", novelId).maybeSingle());
   if (!novel) throw new AiError("NOT_FOUND", "小说不存在或不属于当前账号。", 404);
   const latest = db(await supabase.from("generation_runs").select("id").eq("novel_id", novelId).order("created_at", { ascending: false }).limit(1).maybeSingle());
-  return latest ? getGenerationRun(supabase, latest.id) : null;
+  return latest ? { ...await getGenerationRun(supabase, latest.id), novelRevision: novel.revision } : null;
 }
 
 async function basicConsistencyCheck(supabase, run) {

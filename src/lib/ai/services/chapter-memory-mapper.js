@@ -79,6 +79,13 @@ export function prepareChapterMemoryResult(raw, context) {
     changed.add(row);
   };
   for (const item of result.newFacts) saveFact(item, item.memoryType);
+  const updatedFacts = result.memoryUpdates.map(item => {
+    const row = context.memories.find(memory => memory.id === item.memoryId);
+    if (!row || row.status !== "active") invalid("invalid_memory_update_reference", ["memoryUpdates"]);
+    const fact = { ...item, existingMemoryId: row.id, title: row.title, memoryType: row.memory_type };
+    saveFact(fact, row.memory_type);
+    return fact;
+  });
   for (const item of result.worldUpdates) saveFact(item, "world");
   for (const item of result.abilityChanges) saveFact(item, "ability");
   for (const item of result.items) saveFact(item, "item");
@@ -92,7 +99,7 @@ export function prepareChapterMemoryResult(raw, context) {
     row.status = "resolved"; changed.add(row);
   }
   const payload = { ...result, characters: [...touched], memories: [...changed],
-    newInformation: [...result.newFacts, ...result.worldUpdates, ...result.abilityChanges, ...result.items],
+    newInformation: [...result.newFacts, ...updatedFacts, ...result.worldUpdates, ...result.abilityChanges, ...result.items],
     nextChapterRequirements: result.nextChapterRequirements.map((i) => i.requirement) };
   if (Buffer.byteLength(JSON.stringify(payload), "utf8") > 150000) throw new AiError("MEMORY_TOO_LARGE", "本章提取结果过多，未更新记忆，请重试。", 413);
   return payload;

@@ -4,10 +4,12 @@ import { getAiConfig } from "../config.js";
 import { createDeepSeekClient } from "../deepseek.js";
 import { AiError, normalizeAiError } from "../errors.js";
 import { buildChapterReviewContext } from "../context/chapter-review-context-builder.js";
-import { chapterReviewSchema, chapterReviewJsonSchema } from "../schemas/chapter-review-schema.js";
-import { chapterReviewMessages, CHAPTER_REVIEW_PROMPT_VERSION } from "../prompts/chapter-review-analyzer.js";
+import { chapterReviewSchema } from "../schemas/chapter-review-schema.js";
+import { CHAPTER_REVIEW_PROMPT_VERSION } from "../prompts/chapter-review-analyzer.js";
 import { chapterDatabaseError } from "./chapter-context.js";
 import { matchedEvidence } from "./evidence.js";
+import { resolveReviewEvidence } from "./review-evidence.js";
+import { prepareChapterReviewInput } from "./review-model-input.js";
 
 const checked = (result) => { chapterDatabaseError(result.error); return result.data; };
 const prose = (value) => typeof value === "string" ? value : value && typeof value === "object" ? Object.values(value).map(prose).join("\n") : "";
@@ -48,18 +50,18 @@ export function validateChapterReview(result, context) {
   return parsed;
 }
 
-export async function analyzeChapterReview(context, { config = getAiConfig(), client = createDeepSeekClient(config) } = {}) {
+export async function analyzeChapterReview(context, { config = getAiConfig(), client = createDeepSeekClient(config), reasoningEffort = "low" } = {}) {
   let metadata;
   try {
-    const response = await client.responses.create({ model: config.model, input: chapterReviewMessages(context), stream: false,
-      reasoning: { effort: "low" }, max_output_tokens: 10000,
-      text: { format: { type: "json_schema", name: "chapter_review", schema: chapterReviewJsonSchema, strict: true } } });
+    const prepared = prepareChapterReviewInput(context, { model: config.model, reasoningEffort });
+    const response = await client.responses.create(prepared.request);
     metadata = { model: response.model || config.model, inputTokens: response.usage?.input_tokens ?? null, outputTokens: response.usage?.output_tokens ?? null,
       providerRequestId: response._request_id || response.id || null };
+    if (response.status === "incomplete") throw new AiError("AI_INCOMPLETE", "AI 编辑审核尚未完整输出，未保存部分报告，请重试。");
     if (response.status !== "completed" || !response.output_text || Buffer.byteLength(response.output_text, "utf8") > 100000) throw new AiError("INVALID_AI_OUTPUT", "AI 编辑审核结果不完整，请重试。");
     let json;
     try { json = JSON.parse(response.output_text); } catch { throw new AiError("INVALID_AI_OUTPUT", "AI 编辑审核结果格式无效，请重试。"); }
-    return { result: validateChapterReview(json, context), ...metadata };
+    return { result: validateChapterReview(resolveReviewEvidence(json, prepared.passages), prepared.context), ...metadata };
   } catch (error) { const safe = normalizeAiError(error); safe.metadata = metadata; throw safe; }
 }
 
@@ -90,10 +92,11 @@ export async function prepareChapterReview(supabase, input, dependencies = {}) {
 export async function executeChapterReview(supabase, claim, dependencies = {}) {
   if (!claim.started) return { status: claim.status, reviewId: claim.reviewId };
   const { reviewId, lease, config, context } = claim;
+  let reasoningEffort = "low";
   for (let attempt = 0; attempt < 2; attempt++) {
     const started = Date.now(); let metadata = {};
     try {
-      const analyzed = await (dependencies.analyze || analyzeChapterReview)(context, { config });
+      const analyzed = await (dependencies.analyze || analyzeChapterReview)(context, { config, reasoningEffort });
       metadata = analyzed;
       return checked(await supabase.rpc("studio_finish_chapter_review", {
         p_review_id: reviewId, p_lease_token: lease, p_result: analyzed.result, p_error_type: null,
@@ -106,7 +109,14 @@ export async function executeChapterReview(supabase, claim, dependencies = {}) {
         p_error_type: safe.code, p_metrics: { model: metadata.model || config.model, inputTokens: metadata.inputTokens ?? null,
           outputTokens: metadata.outputTokens ?? null, providerRequestId: metadata.providerRequestId || null, latencyMs: Date.now() - started } });
       console.warn("[chapter-review]", JSON.stringify({ code: safe.code, persisted: !failed.error, attempt: attempt + 1, ...(safe.validationIssues ? { validationIssues: safe.validationIssues } : {}) }));
-      if (attempt === 0 && !failed.error && ["INVALID_AI_OUTPUT","AI_TIMEOUT","AI_NETWORK_ERROR","AI_INCOMPLETE"].includes(safe.code)) {
+      if (attempt === 0 && !failed.error && ["INVALID_AI_OUTPUT","AI_TIMEOUT","AI_NETWORK_ERROR","AI_UPSTREAM_ERROR","AI_INCOMPLETE"].includes(safe.code)) {
+        // A full thinking budget with no report repeated in real long chapters.
+        // Use the one existing retry for extraction, with identical evidence and
+        // validation. Never increase attempts or the output budget.
+        if (safe.code === "AI_INCOMPLETE") reasoningEffort = "none";
+        if (["AI_TIMEOUT","AI_NETWORK_ERROR","AI_UPSTREAM_ERROR"].includes(safe.code)) {
+          await (dependencies.wait || (ms => new Promise(resolve => setTimeout(resolve,ms))))(1000);
+        }
         const retry = await supabase.rpc("studio_retry_chapter_review", { p_review_id: reviewId, p_lease_token: lease });
         if (!retry.error && retry.data?.started) continue;
       }

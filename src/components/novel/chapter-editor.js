@@ -320,7 +320,7 @@ export function ChapterEditor({ chapter, onDirtyChange }) {
           onActiveChange={setGenerationActive} onSaved={acceptGenerated} />
         <AiButton className="button button-ghost button-small" icon={RotateCcw}>重新生成</AiButton>
       </div>
-      <ChapterMemoryStatus novelId={novelId} chapterId={chapterId} revision={view.revision} hasContent={view.saved.body !== ""} onStatus={setMemoryStatus} />
+      <ChapterMemoryStatus novelId={novelId} chapterId={chapterId} revision={view.revision} novelRevision={novel.revision} hasContent={view.saved.body !== ""} onStatus={setMemoryStatus} />
       <ChapterReviewPanel novelId={novelId} chapterId={chapterId} hasContent={view.saved.body !== ""} dirty={dirty || busy || view.conflict} />
       <div className="editor-tabs-row">
         <div className="content-tabs editor-tabs" role="group" aria-label="章节内容分类">

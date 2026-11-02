@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ArrowLeft,
   BookOpen,
@@ -36,12 +36,26 @@ const navigation = [
 ];
 
 export function NovelShell({ id, children }) {
-  const { novels, ready, updateNovel, storageError, refreshNovels, notify } = useStudio();
+  const { novels, user, ready, updateNovel, storageError, refreshNovels, refreshNovel, notify } = useStudio();
   const pathname = usePathname();
   const [assistantOpen, setAssistantOpen] = useState(false);
+  const [detailFailure, setDetailFailure] = useState(null);
+  const [detailAttempt, setDetailAttempt] = useState(0);
+  const novel = novels.find((item) => item.id === id);
+  const needsDetail = ready && novel?.detailLoaded === false;
+  const detailKey = `${user?.id}:${id}:${novel?.revision}:${detailAttempt}`;
+  useEffect(() => {
+    if (!needsDetail) return;
+    let active = true;
+    refreshNovel(id, { dedupe: true }).catch(error => {
+      if (active) setDetailFailure({ key: detailKey, message: error.message });
+    });
+    return () => { active = false; };
+  }, [id, needsDetail, detailKey, refreshNovel]);
   if (!ready) return <LoadingState />;
   if (storageError) return <EmptyState title="暂时无法打开创作空间" description={storageError}><button className="button button-primary" onClick={() => refreshNovels().catch((error) => notify(error.message, "error"))}>重新加载</button></EmptyState>;
-  const novel = novels.find((item) => item.id === id);
+  if (needsDetail && detailFailure?.key === detailKey) return <EmptyState title="暂时无法加载作品详情" description={detailFailure.message}><button className="button button-primary" onClick={() => setDetailAttempt(value => value + 1)}>重新加载</button></EmptyState>;
+  if (needsDetail) return <LoadingState />;
   if (!novel)
     return (
       <div className="missing-novel">

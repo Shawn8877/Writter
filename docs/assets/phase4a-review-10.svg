@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="740" height="240" viewBox="0 0 740 240" role="img" aria-labelledby="title desc">
+  <title id="title">Phase 4A 前10章 AI 审核评分</title>
+  <desc id="desc">第1至10章评分依次为86、86、85、71、85、88、87、79、85、89。纵轴60到100分。模型评分不代表独立质量验收。</desc>
+  <rect width="740" height="240" fill="#101713" rx="12"/>
+  <g font-family="Microsoft YaHei, sans-serif" font-size="12" fill="#c8d4c7">
+    <text x="30" y="25" font-size="16" fill="#f0c789">前10章审核评分 · 模型评分需独立核查</text>
+    <g stroke="#354438" stroke-width="1"><path d="M55 50H685M55 82.5H685M55 115H685M55 147.5H685M55 180H685"/></g>
+    <text x="26" y="54">100</text><text x="34" y="86.5">90</text><text x="34" y="119">80</text><text x="34" y="151.5">70</text><text x="34" y="184">60</text>
+    <polyline points="60,95.5 125,95.5 190,98.75 255,144.25 320,98.75 385,89 450,92.25 515,118.25 580,98.75 645,85.75" fill="none" stroke="#f0c789" stroke-width="2.5"/>
+    <g fill="#f0c789"><circle cx="60" cy="95.5" r="4"/><circle cx="125" cy="95.5" r="4"/><circle cx="190" cy="98.75" r="4"/><circle cx="255" cy="144.25" r="4"/><circle cx="320" cy="98.75" r="4"/><circle cx="385" cy="89" r="4"/><circle cx="450" cy="92.25" r="4"/><circle cx="515" cy="118.25" r="4"/><circle cx="580" cy="98.75" r="4"/><circle cx="645" cy="85.75" r="4"/></g>
+    <g text-anchor="middle"><text x="60" y="83">86</text><text x="125" y="83">86</text><text x="190" y="86">85</text><text x="255" y="132">71</text><text x="320" y="86">85</text><text x="385" y="77">88</text><text x="450" y="80">87</text><text x="515" y="106">79</text><text x="580" y="86">85</text><text x="645" y="73">89</text>
+      <text x="60" y="200">1</text><text x="125" y="200">2</text><text x="190" y="200">3</text><text x="255" y="200">4</text><text x="320" y="200">5</text><text x="385" y="200">6</text><text x="450" y="200">7</text><text x="515" y="200">8</text><text x="580" y="200">9</text><text x="645" y="200">10</text></g>
+    <text x="60" y="224">章节 · 平均84.1分；纵轴60–100；包含审核误报与漏报，不是公开部署通过证明。</text>
+  </g>
+</svg>

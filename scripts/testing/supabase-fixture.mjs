@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { PGlite } from "@electric-sql/pglite";
 
 const rpcParameters = {
+  studio_list_novel_cards: ["p_limit", "p_offset"],
   studio_create_novel: ["p_input"], studio_get_novel: ["p_novel_id"],
   studio_patch_novel: ["p_novel_id", "p_expected_revision", "p_patch", "p_collections"],
   studio_save_chapter: ["p_novel_id", "p_chapter_id", "p_expected_revision", "p_values", "p_create_version"],

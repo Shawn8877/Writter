@@ -12,13 +12,16 @@ const { createSupabaseNovelRepository, readJson } = await import(`data:text/java
 const db = new PGlite();
 const user = { id: "33333333-3333-4333-8333-333333333333" };
 const rpcParameters = {
+  studio_list_novel_cards: ["p_limit", "p_offset"],
   studio_create_novel: ["p_input"], studio_get_novel: ["p_novel_id"],
   studio_patch_novel: ["p_novel_id", "p_expected_revision", "p_patch", "p_collections"],
   studio_save_chapter: ["p_novel_id", "p_chapter_id", "p_expected_revision", "p_values", "p_create_version"],
   studio_delete_novel: ["p_novel_id", "p_expected_revision"],
 };
+const rpcCalls = [];
 const supabase = {
   async rpc(name, input) {
+    rpcCalls.push(name);
     const keys = rpcParameters[name];
     assert.ok(keys, "RPC must be known");
     try {
@@ -147,7 +150,21 @@ try {
   novel = await repository.get(novel.id);
   assert.equal(novel.stats.wordCount, 4);
   assert.equal(novel.memory.chapterSummaries[0].summary, "章摘要");
-  assert.equal((await repository.list()).length, 1);
+  rpcCalls.length = 0;
+  const cards = await repository.list();
+  assert.equal(cards.length, 1);
+  assert.equal(cards[0].detailLoaded, false);
+  assert.equal(novel.detailLoaded, true);
+  assert.equal(cards[0].stats.chapterCount, novel.chapters.length);
+  assert.equal(cards[0].stats.wordCount, 4);
+  for (const key of ["chapters", "memory", "characters", "bible", "timeline"]) assert.equal(Object.hasOwn(cards[0],key),false);
+  assert.deepEqual(rpcCalls,["studio_list_novel_cards"]);
+  const second = await repository.create({ genre: "都市", style: "细腻沉浸", idea: "第二本作品的列表验证", protagonist: "角色", targetWords: 100000, targetChapters: 50, wordsPerChapter: 2000 });
+  assert.equal((await supabase.rpc("studio_list_novel_cards",{p_limit:1,p_offset:0})).data[0].id,second.id);
+  assert.equal((await supabase.rpc("studio_list_novel_cards",{p_limit:1,p_offset:1})).data[0].id,novel.id);
+  await db.query("select set_config('request.jwt.claim.sub',$1,false)",[crypto.randomUUID()]);
+  assert.deepEqual((await supabase.rpc("studio_list_novel_cards",{p_limit:500,p_offset:0})).data,[]);
+  await db.query("select set_config('request.jwt.claim.sub',$1,false)",[user.id]);
   await repository.remove(novel.id, novel.revision);
   await assert.rejects(repository.get(novel.id), (error) => error.status === 404);
   console.log("PASS: request origin validation + actual server adapter + PostgreSQL integration: create/get/list, metadata CRUD, hidden JSON preservation, shared memory projections and lossless foreshadowing statuses, chapter CAS/versions/summary/stats, delete.");

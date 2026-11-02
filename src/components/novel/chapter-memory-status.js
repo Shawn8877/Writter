@@ -13,7 +13,7 @@ const reasons = {
   LEASE_EXPIRED: "上次分析已中断，可以重新尝试。",
   MEMORY_REVIEW_REQUIRED: "正文与原分析已不一致，请人工核对摘要、人物、时间线和记忆。",
 };
-export function ChapterMemoryStatus({ novelId, chapterId, revision, hasContent, onStatus }) {
+export function ChapterMemoryStatus({ novelId, chapterId, revision, novelRevision, hasContent, onStatus }) {
   const { refreshNovel } = useStudio();
   const refresh = useRef(refreshNovel); useEffect(() => { refresh.current = refreshNovel; }, [refreshNovel]);
   const [state, setState] = useState({ status: "none" });
@@ -21,6 +21,8 @@ export function ChapterMemoryStatus({ novelId, chapterId, revision, hasContent, 
   const [reviewOpen, setReviewOpen] = useState(false); const [reviewChecked, setReviewChecked] = useState(false); const [acknowledging, setAcknowledging] = useState(false);
   const lock = useRef(false); const retryTime = useRef(0); const lastUpdated = useRef(null);
   const refreshed = useRef(null);
+  const loadedRevision = useRef(novelRevision);
+  useEffect(() => { loadedRevision.current = novelRevision; }, [novelRevision]);
   const url = `/api/ai/chapters/memory?${new URLSearchParams({ novelId, chapterId })}`;
   useEffect(() => {
     let cancelled = false; let timer; const controller = new AbortController();
@@ -37,7 +39,9 @@ export function ChapterMemoryStatus({ novelId, chapterId, revision, hasContent, 
         setState(next); onStatus?.(next.status); setError("");
         if (["succeeded", "reviewed"].includes(next.status) && refreshed.current !== next.updatedAt) {
           refreshed.current = next.updatedAt;
-          void refresh.current(novelId).catch(() => { if (!cancelled) setError("记忆已更新，页面刷新失败，请刷新页面查看。"); });
+          if (next.novelRevision > loadedRevision.current) {
+            void refresh.current(novelId, { dedupe: true, minimumRevision: next.novelRevision }).catch(() => { if (!cancelled) { refreshed.current = null; setError("记忆已更新，页面刷新失败，请刷新页面查看。"); } });
+          }
         }
         if (["pending", "running"].includes(next.status)) timer = setTimeout(poll, 2500);
       } catch (e) { if (!cancelled) setError(e instanceof TypeError ? "网络中断，正文已保存。恢复连接后可刷新分析状态。" : e.message); }

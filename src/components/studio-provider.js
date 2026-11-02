@@ -17,6 +17,7 @@ export function StudioProvider({ children }) {
   const identity = useRef(null);
   const epoch = useRef(0);
   const timer = useRef(null);
+  const detailRequests = useRef(new Map());
   const notify = useCallback((message, type = "info") => {
     clearTimeout(timer.current);
     setToast({ message, type });
@@ -37,7 +38,7 @@ export function StudioProvider({ children }) {
     if (generation !== epoch.current || account !== identity.current) return [];
     publish(records.map((record) => {
       const local = currentNovels.current.find((item) => item.id === record.id);
-      return local && local.revision > record.revision ? local : record;
+      return local && (local.revision > record.revision || (local.revision === record.revision && local.detailLoaded)) ? local : record;
     }));
     setStorageError(null);
     return records;
@@ -81,7 +82,7 @@ export function StudioProvider({ children }) {
   const updateNovel = useCallback(async (id, updater) => {
     const account = identity.current; checkAccount(account);
     const previous = currentNovels.current.find((novel) => novel.id === id);
-    if (!previous) throw new Error("小说尚未加载，请刷新后重试。");
+    if (!previous?.detailLoaded) throw new Error("小说详情尚未加载，请刷新后重试。");
     const next = await cloudNovelRepository.update(previous, updater(previous));
     checkAccount(account); mergeNovel(next); return next;
   }, [checkAccount, mergeNovel]);
@@ -92,14 +93,31 @@ export function StudioProvider({ children }) {
     await cloudNovelRepository.remove(id, current.revision);
     checkAccount(account); publish(currentNovels.current.filter((novel) => novel.id !== id));
   }, [checkAccount, publish]);
-  const refreshNovel = useCallback(async (id) => {
+  const refreshNovel = useCallback(async (id, { dedupe = false, minimumRevision = 0 } = {}) => {
     const account = identity.current; checkAccount(account);
-    const novel = await cloudNovelRepository.get(id);
-    checkAccount(account); mergeNovel(novel); return novel;
+    const generation = epoch.current;
+    const key = `${generation}:${account}:${id}`;
+    if (dedupe && detailRequests.current.has(key)) {
+      const shared = await detailRequests.current.get(key);
+      if (shared.revision >= minimumRevision) return shared;
+      // A read begun before memory committed may be too old. Read again so
+      // the one-shot completion poll cannot leave the editor permanently stale.
+      checkAccount(account);
+      if (generation !== epoch.current) throw new Error("账号状态已变化，请重新打开作品。");
+    }
+    const request = (async () => {
+      const novel = await cloudNovelRepository.get(id);
+      checkAccount(account);
+      if (generation !== epoch.current) throw new Error("账号状态已变化，请重新打开作品。");
+      mergeNovel(novel); return novel;
+    })();
+    if (dedupe) detailRequests.current.set(key, request);
+    try { return await request; }
+    finally { if (detailRequests.current.get(key) === request) detailRequests.current.delete(key); }
   }, [checkAccount, mergeNovel]);
   const acceptChapter = useCallback((novelId, chapter) => {
     const novel = currentNovels.current.find((item) => item.id === novelId && item.userId === identity.current);
-    if (!novel) return;
+    if (!novel?.detailLoaded) return;
     const old = novel.chapters.find((item) => item.id === chapter.id);
     if (!old || old.revision > chapter.revision) return;
     const chapters = novel.chapters.map((item) => item.id === chapter.id ? chapter : item);

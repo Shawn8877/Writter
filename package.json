@@ -20,6 +20,9 @@
     "test:memory": "node --import ./scripts/testing/register-server.mjs scripts/test-chapter-memory.mjs",
     "test:runs": "node --import ./scripts/testing/register-server.mjs scripts/test-generation-runs.mjs",
     "test:reviews": "node --import ./scripts/testing/register-server.mjs scripts/test-chapter-review.mjs",
+    "test:health": "node --import ./scripts/testing/register-server.mjs scripts/test-novel-health.mjs",
+    "test:stress": "node --import ./scripts/testing/register-server.mjs scripts/testing/long-novel-stress.mjs",
+    "test:stress:report": "node --import ./scripts/testing/register-server.mjs scripts/testing/analyze-long-novel.mjs",
     "test:browser:reviews": "node scripts/testing/browser-chapter-review.mjs",
     "test:browser:review-critical": "node --import ./scripts/testing/register-server.mjs scripts/testing/browser-review-critical.mjs",
     "test:browser:runs": "node scripts/testing/browser-generation-runs.mjs",
@@ -33,7 +36,7 @@
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.116.0",
     "lucide-react": "^0.577.0",
-    "next": "^16.1.6",
+    "next": "16.4.2",
     "openai": "^7.30.1",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
@@ -45,7 +48,7 @@
     "@electric-sql/pglite": "^0.5.8",
     "@tailwindcss/postcss": "^4.2.1",
     "eslint": "^9.39.3",
-    "eslint-config-next": "^16.1.6",
+    "eslint-config-next": "16.4.2",
     "tailwindcss": "^4.2.1"
   }
 }

@@ -54,7 +54,7 @@ export function DashboardView() {
     {
       icon: Layers3,
       label: "已有章节",
-      value: novels.reduce((sum, novel) => sum + novel.chapters.length, 0),
+      value: novels.reduce((sum, novel) => sum + (novel.stats?.chapterCount ?? novel.chapters?.length ?? 0), 0),
       unit: "章",
     },
   ];

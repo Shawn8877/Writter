@@ -30,7 +30,7 @@ export function NovelCard({ novel }) {
         <div className="novel-card-stats">
           <span>
             <BookOpen size={13} />
-            {novel.chapters.length} 章
+            {novel.stats?.chapterCount ?? novel.chapters?.length ?? 0} 章
           </span>
           <span>{formatNumber(words)} 字</span>
           <span>

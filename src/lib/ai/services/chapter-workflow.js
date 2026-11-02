@@ -19,15 +19,26 @@ export async function generateChapterPreview(supabase, body, emit = () => {}, de
   const config = (dependencies.getConfig || getAiConfig)();
   emit({ type: "stage", stage: "preparing" });
   const prepared = await (dependencies.context || buildChapterContext)(supabase, input);
+  const contextHash = inputHash(prepared.context);
+  const previousAttempt = await supabase.from("ai_generation_logs").select("input_hash,status,error_type,model")
+    .eq("novel_id", input.novelId).eq("chapter_id", input.chapterId).eq("generation_type", "chapter_generation")
+    .order("created_at", { ascending: false }).limit(1).maybeSingle();
+  chapterDatabaseError(previousAttempt.error);
+  const previous = previousAttempt.data;
+  // One paid call per explicit request. A retry of the identical input after
+  // incomplete or invalid prose should not spend another budget thinking again.
+  // Providers can also label a reasoning-only, empty response as completed.
+  const reasoningEffort = previous?.status === "failed" && ["AI_INCOMPLETE", "INVALID_AI_OUTPUT"].includes(previous.error_type)
+    && previous.input_hash === contextHash && previous.model === config.model ? "none" : "low";
   const lease = randomUUID();
   const { data: generationId, error } = await supabase.rpc("studio_begin_chapter_generation", {
-    p_request_id: input.requestId, p_lease_token: lease, p_input_hash: inputHash(prepared.context), p_model: config.model,
+    p_request_id: input.requestId, p_lease_token: lease, p_input_hash: contextHash, p_model: config.model,
     p_novel_id: input.novelId, p_chapter_id: input.chapterId, p_novel_revision: prepared.novelRevision, p_chapter_revision: prepared.chapterRevision,
   });
   chapterDatabaseError(error);
   emit({ type: "stage", stage: "generating" });
   const start = Date.now(); let result; let failure;
-  try { result = await (dependencies.write || writeChapter)(prepared.context, { config }); }
+  try { result = await (dependencies.write || writeChapter)(prepared.context, { config, reasoningEffort }); }
   catch (error) { failure = normalizeAiError(error); }
   const metadata = result || failure?.metadata || {};
   const finished = await supabase.rpc("studio_finish_chapter_generation", {

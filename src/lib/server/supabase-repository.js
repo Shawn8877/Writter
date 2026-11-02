@@ -60,6 +60,14 @@ export function chapterFromRow(row) {
 function memoryFromRow(row) {
   return { id: row.id, type: row.memory_type, memoryType: row.memory_type, title: row.title, content: row.content, importance: row.importance, status: row.status, sourceType: row.source_type, sourceId: row.source_id, chapterId: row.chapter_id, sourceChapterId: row.chapter_id, metadata: row.metadata, ...stamps(row) };
 }
+function cardFromRow(row) {
+  return {
+    id: row.id, userId: row.user_id, title: row.title, description: row.description, genre: row.genre, style: row.style, idea: row.premise,
+    targetWords: row.target_word_count, targetChapters: row.target_chapter_count, wordsPerChapter: row.chapter_word_target, status: novelStatuses[row.status], statusCode: row.status,
+    cover: row.cover_theme, coverUrl: row.cover_url, revision: row.revision, isDemo: false, detailLoaded: false, ...stamps(row),
+    stats: { chapterCount: Number(row.chapter_count), wordCount: Number(row.word_count) },
+  };
+}
 function modelFromRows(data) {
   const row = data.novel;
   const bible = data.novel_bible || {};
@@ -70,7 +78,7 @@ function modelFromRows(data) {
   return {
     id: row.id, userId: row.user_id, title: row.title, description: row.description, genre: row.genre, style: row.style, idea: row.premise, protagonist: row.protagonist,
     targetWords: row.target_word_count, targetChapters: row.target_chapter_count, wordsPerChapter: row.chapter_word_target, status: novelStatuses[row.status], statusCode: row.status,
-    cover: row.cover_theme, coverUrl: row.cover_url, revision: row.revision, isDemo: false, ...stamps(row),
+    cover: row.cover_theme, coverUrl: row.cover_url, revision: row.revision, isDemo: false, detailLoaded: true, ...stamps(row),
     stats: { chapterCount: chapters.length, wordCount: chapters.reduce((sum, chapter) => sum + chapter.wordCount, 0) },
     bible: { id: bible.id, synopsis: bible.synopsis || "", conflict: bible.main_conflict || "", storyline: bible.storyline || "", antagonist: bible.antagonist || "", romance: bible.romance_direction || "", corePremise: bible.core_premise || "", worldRules: bible.world_rules || [], storyTone: bible.story_tone || "", writingStyle: bible.writing_style || "", protagonistArc: bible.protagonist_arc || "", powerSystem: bible.power_system || "", endingDirection: bible.ending_direction || "", forbiddenChanges: bible.forbidden_changes || [] },
     builderMetadata: bible.builder_metadata || {},
@@ -156,9 +164,9 @@ export function createSupabaseNovelRepository(supabase, user) {
     async list() {
       const result = [];
       for (let offset = 0; ; offset += 500) {
-        const { data, error } = await supabase.from("novels").select("id").eq("user_id", user.id).order("updated_at", { ascending: false }).range(offset, offset + 499);
+        const { data, error } = await supabase.rpc("studio_list_novel_cards", { p_limit: 500, p_offset: offset });
         fail(error);
-        for (let i = 0; i < data.length; i += 10) result.push(...await Promise.all(data.slice(i, i + 10).map((item) => get(item.id))));
+        result.push(...data.map(cardFromRow));
         if (data.length < 500) return result;
       }
     },

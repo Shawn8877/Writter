@@ -39,6 +39,8 @@ try {
     const client = createDeepSeekClient(config);
     client.fetch = async (url, options) => { const body = JSON.parse(options.body); assert.equal(String(url), "https://api.deepseek.com/responses"); assert.ok(body.input[0].content.includes("960–1440")); assert.equal(JSON.parse(body.input[1].content).previousChapter.content, s.previousContent); assert.equal(body.stream, false); return Response.json(response); };
     const result = await writeChapter(prepared.context, { config, client }); assert.equal(result.content, prose);
+    client.fetch = async (_url, options) => { assert.equal(JSON.parse(options.body).reasoning.effort,"none"); return Response.json(response); };
+    assert.equal((await writeChapter(prepared.context,{config,client,reasoningEffort:"none"})).content,prose);
     for (const mode of ["empty", "refusal", "incomplete"]) {
       const bad = structuredClone(response);
       if (mode === "empty") bad.output[0].content[0].text = " ";
@@ -91,6 +93,51 @@ try {
     await ready;
     try { await assert.rejects(generateChapterPreview(a, { ...request, requestId: randomUUID() }, () => {}, { ...deps, write: () => assert.fail("parallel paid call") }), (e) => e.code === "AI_BUSY"); } finally { release(); await running; }
   });
+  await check("explicit same-input retry after incomplete thinking disables thinking without automatic calls; changed input resets policy", async () => {
+    const client=createClient("http://127.0.0.1:43061","testanon",{auth:{persistSession:false}});
+    const auth=await client.auth.signUp({email:`${randomUUID()}@example.invalid`,password:"WriterRetryFixture1!"});assert.ifError(auth.error);
+    const seed=await seedChapterSql(db,auth.data.user.id);
+    const request={novelId:seed.novelId,chapterId:seed.chapterId,expectedRevision:1,requestId:randomUUID()};
+    const modes=[];
+    const incomplete={...deps,write:async(_ctx,options)=>{modes.push(options.reasoningEffort);const error=new AiError("AI_INCOMPLETE","fixture");error.metadata={model:config.model,inputTokens:30000,outputTokens:13000};throw error;}};
+    await assert.rejects(generateChapterPreview(client,request,()=>{},incomplete),e=>e.code==="AI_INCOMPLETE");
+    assert.deepEqual(modes,["low"],"Failure cannot trigger an automatic paid retry");
+    await assert.rejects(generateChapterPreview(client,request,()=>{},{...deps,write:()=>assert.fail("Duplicate request must not call AI")}),e=>e.code==="DUPLICATE_REQUEST");
+    const next=await generateChapterPreview(client,{...request,requestId:randomUUID()},()=>{},{...deps,write:async(_ctx,options)=>{modes.push(options.reasoningEffort);return generated;}});
+    assert.deepEqual(modes,["low","none"]);
+    await assert.rejects(generateChapterPreview(client,{...request,requestId:randomUUID()},()=>{},incomplete),e=>e.code==="AI_INCOMPLETE");
+    await db.query("update novel_bible set main_conflict=main_conflict||' 新的作者设定' where novel_id=$1",[seed.novelId]);
+    await generateChapterPreview(client,{...request,requestId:randomUUID()},()=>{},{...deps,write:async(_ctx,options)=>{modes.push(options.reasoningEffort);return generated;}});
+    assert.deepEqual(modes,["low","none","low","low"]);
+    const rows=(await db.query("select status,input_tokens,output_tokens from ai_generation_logs where novel_id=$1 order by created_at",[seed.novelId])).rows;
+    assert.equal(rows.length,4);assert.equal(rows[0].output_tokens,13000);assert.equal(rows[0].status,"failed");
+    assert.equal((await db.query("select count(*)::int as n from chapter_versions where chapter_id=$1",[seed.chapterId])).rows[0].n,0);
+    assert.ok(next.generationId,"Recovery creates only a preview, never saves body implicitly");
+  });
+  await check("completed reasoning-only response remains failed; explicit same-input retry recovers once without saving or losing usage", async () => {
+    const client = createClient("http://127.0.0.1:43061", "testanon", { auth: { persistSession: false } });
+    const auth = await client.auth.signUp({ email: `${randomUUID()}@example.invalid`, password: "EmptyWriterFixture1!" }); assert.ifError(auth.error);
+    const seed = await seedChapterSql(db, auth.data.user.id);
+    const request = { novelId: seed.novelId, chapterId: seed.chapterId, expectedRevision: 1, requestId: randomUUID() };
+    const provider = createDeepSeekClient(config); const modes = [];
+    const empty = responseFixture({}, config.model);
+    empty.output = [{ type: "reasoning", id: "reasoning_only", summary: [] }];
+    empty.usage = { input_tokens: 38009, output_tokens: 8556, output_tokens_details: { reasoning_tokens: 8556 }, total_tokens: 46565 };
+    provider.fetch = async (_url, options) => { modes.push(JSON.parse(options.body).reasoning.effort); return Response.json(empty); };
+    const actualWriter = { getConfig: () => config, write: (context, options) => writeChapter(context, { ...options, client: provider }) };
+    await assert.rejects(generateChapterPreview(client, request, () => {}, actualWriter), e => e.code === "INVALID_AI_OUTPUT");
+    assert.deepEqual(modes, ["low"], "No automatic second paid call");
+    assert.equal((await db.query("select count(*)::int as n from ai_chapter_previews where chapter_id=$1", [seed.chapterId])).rows[0].n, 0);
+    const complete = responseFixture({}, config.model); complete.output[0].content[0].text = prose;
+    provider.fetch = async (_url, options) => { modes.push(JSON.parse(options.body).reasoning.effort); return Response.json(complete); };
+    const preview = await generateChapterPreview(client, { ...request, requestId: randomUUID() }, () => {}, actualWriter);
+    assert.equal(preview.content, prose); assert.deepEqual(modes, ["low", "none"]);
+    const logs = (await db.query("select status,error_type,input_tokens,output_tokens from ai_generation_logs where novel_id=$1 order by created_at", [seed.novelId])).rows;
+    assert.equal(logs.length, 2); assert.equal(logs[0].status, "failed"); assert.equal(logs[0].error_type, "INVALID_AI_OUTPUT");
+    assert.equal(logs[0].input_tokens, 38009); assert.equal(logs[0].output_tokens, 8556);
+    assert.equal((await db.query("select content from chapters where id=$1", [seed.chapterId])).rows[0].content, "");
+    assert.equal((await db.query("select count(*)::int as n from chapter_versions where chapter_id=$1", [seed.chapterId])).rows[0].n, 0);
+  });
   await check("missing outline/Bible, invalid target and oversized context fail before any paid request", async () => {
     const other = await seedChapterSql(db, aa.data.user.id); const request = { ...input, novelId: other.novelId, chapterId: other.chapterId, requestId: randomUUID() };
     await db.query("update novels set chapter_word_target=50000 where id=$1", [other.novelId]);
@@ -103,6 +150,38 @@ try {
     await assert.rejects(buildChapterContext(a, request), (e) => e.code === "BIBLE_REQUIRED");
     await db.query("update novel_bible set core_premise=$1 where novel_id=$2", ["设定".repeat(100000), other.novelId]);
     await assert.rejects(buildChapterContext(a, request), (e) => e.code === "CONTEXT_TOO_LARGE");
+  });
+  await check("historical next-chapter plans expire while summaries, current requirements and stored history remain intact", async () => {
+    const seed = await seedChapterSql(db, aa.data.user.id);
+    await db.query("update chapters set content='林舟已归还钥匙，抵达档案馆。',summary='钥匙已归还，林舟抵达档案馆。' where id=$1",[seed.chapterId]);
+    const oldRequirements=JSON.stringify(["明天必须到钟表店归还钥匙"]);
+    const latestRequirements=JSON.stringify(["下一章从档案馆开始"]);
+    await db.query("update chapter_summaries set next_chapter_requirements=$1 where chapter_id=$2",[oldRequirements,seed.previousId]);
+    await db.query("update chapter_summaries set next_chapter_requirements=$1 where chapter_id=$2",[latestRequirements,seed.chapterId]);
+    const nextId=randomUUID();
+    await db.query("insert into chapters(id,novel_id,title,outline,sort_order) values($1,$2,'第三章','从档案馆继续查证',3)",[nextId,seed.novelId]);
+    const {context}=await buildChapterContext(a,{novelId:seed.novelId,chapterId:nextId,expectedRevision:1});
+    assert.equal(context.recentSummaries[0].number,1);
+    assert.ok(context.recentSummaries[0].summary);
+    assert.equal(context.recentSummaries[0].next_chapter_requirements,undefined);
+    assert.deepEqual(context.recentSummaries[1].next_chapter_requirements,["下一章从档案馆开始"]);
+    assert.ok(context.continuityRequirements.includes("下一章从档案馆开始"));
+    assert.ok(!context.continuityRequirements.includes("明天必须到钟表店归还钥匙"));
+    assert.deepEqual((await db.query("select next_chapter_requirements from chapter_summaries where chapter_id=$1",[seed.previousId])).rows[0].next_chapter_requirements,JSON.parse(oldRequirements));
+  });
+  await check("overlapping clue selections keep every chosen fact once, including clues beyond the dedicated limit", async () => {
+    const seed = await seedChapterSql(db, aa.data.user.id);
+    for (let i = 0; i < 45; i++) await db.query("insert into memory_items(novel_id,memory_type,title,content,importance,status) values($1,'foreshadowing',$2,$3,4,'active')", [seed.novelId, `待解线索${i}`, `线索${i}的原因尚未揭示。`]);
+    await db.query("insert into memory_items(novel_id,memory_type,title,content,importance,status) values($1,'foreshadowing','已解线索','旧事已经查清',5,'resolved')", [seed.novelId]);
+    const { context } = await buildChapterContext(a, { novelId: seed.novelId, chapterId: seed.chapterId, expectedRevision: 1 });
+    const combined = [...context.memories, ...context.unresolvedForeshadowing];
+    assert.equal(context.unresolvedForeshadowing.length, 40);
+    assert.equal(context.memories.filter(m => m.memory_type === "foreshadowing").length, 5);
+    assert.equal(combined.length, 47, "All 45 active clues and the two core facts remain, with no duplicated query overlap");
+    assert.equal(new Set(combined.map(m => m.title)).size, 47);
+    assert.ok(combined.every(m => !Object.hasOwn(m, "id")), "Lookup IDs need not increase the model payload");
+    assert.ok(!combined.some(m => m.title === "已解线索"));
+    assert.equal((await db.query("select count(*)::int as n from memory_items where novel_id=$1", [seed.novelId])).rows[0].n, 48, "Stored active and resolved facts are untouched");
   });
   await mkdir("artifacts/phase3c0", { recursive: true }); await writeFile("artifacts/phase3c0/unit-results.json", JSON.stringify({ status: "passed", scope: "local SQL + explicit model fixture; not real AI", checks: results }, null, 2));
 } finally { await fixture.close(); }

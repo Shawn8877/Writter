@@ -24,6 +24,8 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-public-key
 
 **Phase 3A 已切换到 DeepSeek 并通过真实生成验收（2026-10-09）。** 采用 DeepSeek Responses 的 JSON Schema 结构化输出，服务端继续严格校验人物、世界、故事阶段与记忆。19 组 AI/数据库检查、11 组隔离网页流程、5 组真实 DeepSeek + Supabase 验收通过；一个都市方案完成预览修改、确认保存和账号隔离验证，详见 [Phase 3A 报告](docs/PHASE_3A.md)。既有 UI、003 数据库结构及 Phase 2.5 数据保留。
 
+**Phase 4A 已完成50章受控压力测试，NOT READY FOR PHASE 4B。** 真实DeepSeek与Supabase保存272,168个去空白字符、50份摘要/记忆结果/有效审核。第40章仍有语义缺句，人物知识、日期金额、过期记忆和重复剧情未通过质量验收，停止100章测试及公开部署。详见[50章完整报告](docs/LONG_NOVEL_50_CHAPTER_REPORT.md)、[25章报告](docs/LONG_NOVEL_25_CHAPTER_REPORT.md)及[修复历史](docs/PHASE_4A.md)。015迁移优化列表；Next.js补丁升级16.4.2。
+
 ## 已实现
 
 - 邮箱密码注册、登录、退出、Cookie 会话与服务端访问保护。

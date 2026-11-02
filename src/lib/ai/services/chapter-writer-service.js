@@ -4,11 +4,11 @@ import { createDeepSeekClient } from "../deepseek.js";
 import { AiError, normalizeAiError } from "../errors.js";
 import { chapterMessages } from "../prompts/chapter-writer.js";
 
-export async function writeChapter(context, { config = getAiConfig(), client = createDeepSeekClient(config) } = {}) {
+export async function writeChapter(context, { config = getAiConfig(), client = createDeepSeekClient(config), reasoningEffort = "low" } = {}) {
   let metadata;
   try {
     const response = await client.responses.create({ model: config.model, input: chapterMessages(context), stream: false,
-      reasoning: { effort: "low" }, max_output_tokens: Math.min(24000, Math.max(6000, context.novel.chapter_word_target * 3 + 4000)) });
+      reasoning: { effort: reasoningEffort }, max_output_tokens: Math.min(24000, Math.max(6000, context.novel.chapter_word_target * 3 + 4000)) });
     metadata = { model: response.model || config.model, inputTokens: response.usage?.input_tokens ?? null, outputTokens: response.usage?.output_tokens ?? null, providerRequestId: response._request_id || response.id || null };
     if (response.output?.some((item) => item.content?.some((part) => part.type === "refusal"))) throw new AiError("AI_REFUSAL", "AI 无法按当前大纲创作，请调整大纲后重试。", 422);
     if (response.status !== "completed") throw new AiError("AI_INCOMPLETE", "本章未完整生成，未保存正文。请稍后重试。");

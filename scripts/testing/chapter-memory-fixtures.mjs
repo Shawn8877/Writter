@@ -30,10 +30,10 @@ export function memoryAnalysisFixture(context) {
   const result = {
     chapterSummary: "林舟在上海旧钟表店首次获得只能预见未来二十四小时的能力。他试图看得更远时流鼻血，坐在柜台旁休息。许青留在上海档案馆，通过电话劝他停止尝试。店主周伯递来纸巾，解释挂钟停走是因为电池没电。林舟收好编号十七的铜钥匙，但尚不知道它对应哪扇门。",
     keyEvents: [{ title: "获得有限预见能力", description: "林舟在上海旧钟表店首次获得预见能力。", importance: 4, evidence: "林舟在上海旧钟表店获得了预见能力。" }],
-    characterChanges: [{ characterName: "林舟", changeType: "growth", description: "获得预见能力，越界尝试后流鼻血。", newState: { description: "在柜台旁休息，停止使用能力。", location: "上海旧钟表店柜台旁", health: "流鼻血", activity: "休息", isAlive: null }, evidence: "他试着看得更远，却立刻流鼻血，只好坐在柜台旁休息。" }],
+    characterChanges: [{ characterName: "林舟", changeType: "growth", description: "获得预见能力，越界尝试后流鼻血。", newState: { description: "在柜台旁休息，停止使用能力。", location: "上海旧钟表店柜台旁", health: "流鼻血", activity: "休息", knowledge: null, isAlive: null }, evidence: "他试着看得更远，却立刻流鼻血，只好坐在柜台旁休息。" }],
     newCharacters: [{ name: "周伯", role: "重要配角", description: "上海旧钟表店店主，给林舟递来纸巾。", evidence: "店主周伯递来纸巾" }],
     relationshipChanges: [{ characterName: "林舟", targetName: "周伯", description: "接受周伯递来的纸巾。", evidence: "店主周伯递来纸巾" }],
-    newFacts: [], worldUpdates: [],
+    newFacts: [], memoryUpdates: [], worldUpdates: [],
     timelineEvents: [{ title: "林舟获得预见能力", description: "林舟在旧钟表店获得能力，尝试越界后流鼻血。", importance: 5, eventTime: "", evidence: "林舟在上海旧钟表店获得了预见能力。" }],
     abilityChanges: [{ characterName: "林舟", title: "二十四小时预见", description: "林舟只能预见未来24小时，尝试超出上限会流鼻血。", importance: 5, evidence: "他只能看见未来二十四小时，超过这个上限就是一片漆黑。他试着看得更远，却立刻流鼻血", existingMemoryId: ability?.id || null }],
     items: [{ title: "十七号铜钥匙", description: "林舟持有编号十七的铜钥匙。", importance: 4, evidence: "林舟将编号十七的铜钥匙收入口袋", existingMemoryId: null }],
@@ -42,7 +42,10 @@ export function memoryAnalysisFixture(context) {
     nextChapterRequirements: [{ requirement: "林舟的预见上限仍是24小时，越界尝试会流鼻血；下一章从休息衔接。", evidence: "他只能看见未来二十四小时，超过这个上限就是一片漆黑。他试着看得更远，却立刻流鼻血，只好坐在柜台旁休息。" }],
   };
   if(context.evidencePassages) for(const items of Object.values(result)) {
-    if(Array.isArray(items)) for(const item of items) item.evidence=context.evidencePassages.find(passage=>passage.text.includes(item.evidence))?.id || "UNKNOWN";
+    if(Array.isArray(items)) for(const item of items) {
+      item.evidence=context.evidencePassages.find(passage=>passage.text.includes(item.evidence))?.id || "UNKNOWN";
+      delete item.existingMemoryId;
+    }
   }
   return result;
 }

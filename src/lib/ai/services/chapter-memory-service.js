@@ -9,17 +9,20 @@ import { buildChapterMemoryContext } from "../context/chapter-memory-context-bui
 import { prepareChapterMemoryResult } from "./chapter-memory-mapper.js";
 import { chapterDatabaseError } from "./chapter-context.js";
 import { inputHash } from "./builder-workflow.js";
-import { memoryEvidenceCatalog, memoryEvidenceSchema, resolveMemoryEvidence } from "./memory-evidence.js";
+import { memoryEvidenceCatalog, memoryEvidenceSchema, resolveMemoryEvidence, chapterMemoryModelContext, memoryReferenceSchema } from "./memory-evidence.js";
 
 export async function analyzeChapterMemory(context, { config = getAiConfig(), client = createDeepSeekClient(config) } = {}) {
   let metadata;
   try {
     const passages = memoryEvidenceCatalog(context.chapter.content);
-    const schema = memoryEvidenceSchema(chapterMemoryJsonSchema, passages);
-    const messages = chapterMemoryMessages({ ...context, evidencePassages: passages });
+    const modelContext = chapterMemoryModelContext(context);
+    const schema = memoryReferenceSchema(memoryEvidenceSchema(chapterMemoryJsonSchema, passages), modelContext.memories);
+    const messages = chapterMemoryMessages({ ...modelContext, evidencePassages: passages });
     if (Buffer.byteLength(JSON.stringify({ messages, schema }), "utf8") > 180000) throw new AiError("CONTEXT_TOO_LARGE", "记忆分析上下文过长，请整理本章及资料后重试。", 413);
     const response = await client.responses.create({ model: config.model, input: messages, stream: false,
-      reasoning: { effort: "low" }, max_output_tokens: 16000,
+      // Extraction uses explicit evidence IDs and strict validation. Thinking
+      // consumed 13.9K/16K tokens before JSON finished in the real stress test.
+      reasoning: { effort: "none" }, temperature: 0.2, max_output_tokens: 16000,
       text: { format: { type: "json_schema", name: "chapter_memory_analysis", schema, strict: true } } });
     metadata = { model: response.model || config.model, inputTokens: response.usage?.input_tokens ?? null, outputTokens: response.usage?.output_tokens ?? null, providerRequestId: response._request_id || response.id || null };
     if (response.output?.some((item) => item.content?.some((part) => part.type === "refusal"))) throw new AiError("AI_REFUSAL", "AI 无法分析当前正文，请检查内容后重试。", 422);
@@ -83,7 +86,16 @@ export async function getChapterMemoryStatus(supabase, { novelId, chapterId }) {
   if (!result.data) return { status: "none", chapterRevision: chapter.data.revision };
   const row = result.data;
   const expired = ["pending", "running"].includes(row.status) && Date.now() - new Date(row.updated_at).getTime() > 300000;
-  return { status: expired ? "failed" : row.status, errorType: expired ? "LEASE_EXPIRED" : row.error_type, updatedAt: row.updated_at, chapterRevision: chapter.data.revision };
+  // Read after the job: its committed memory must be included in this revision.
+  // A completed job is often historical and does not require another full novel.
+  let novelRevision;
+  if (["succeeded", "reviewed"].includes(row.status)) {
+    const novel = await supabase.from("novels").select("revision").eq("id", novelId).maybeSingle();
+    chapterDatabaseError(novel.error);
+    if (!novel.data) throw new AiError("NOT_FOUND", "小说不存在或不属于当前账号。", 404);
+    novelRevision = novel.data.revision;
+  }
+  return { status: expired ? "failed" : row.status, errorType: expired ? "LEASE_EXPIRED" : row.error_type, updatedAt: row.updated_at, chapterRevision: chapter.data.revision, novelRevision };
 }
 
 export async function acknowledgeChapterMemoryReview(supabase, { novelId, chapterId, expectedRevision }) {

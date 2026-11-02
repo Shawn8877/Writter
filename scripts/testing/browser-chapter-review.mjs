@@ -49,7 +49,7 @@ try {
       if(body.text?.format?.name==="chapter_memory_analysis") { memoryCalls++; output.output[0].content[0].text=JSON.stringify(memoryAnalysisFixture(parsed)); }
       else if(body.text?.format?.name==="chapter_review") {
         reviewCalls++; const reviewed=reviewFixture();
-        if(reviewCalls===1) { reviewed.status="critical";reviewed.overallScore=45;reviewed.findings=[{category:"ability",severity:"critical",title:"验收用严重问题",description:"此确定性样例用于验证暂停和作者决定流程。",evidence:[{source:"chapter",sourceId:parsed.chapter.id,excerpt:parsed.chapter.content.slice(0,30)}],relatedMemoryId:null,relatedCharacterId:null,relatedChapterId:parsed.chapter.id,suggestion:"请作者核对后继续。"}]; }
+        if(reviewCalls===1) { reviewed.status="critical";reviewed.overallScore=45;reviewed.findings=[{category:"ability",severity:"critical",title:"验收用严重问题",description:"此确定性样例用于验证暂停和作者决定流程。",evidence:[parsed.evidencePassages.find(p=>p.source==="chapter").passages[0][0]],suggestion:"请作者核对后继续。"}]; }
         output.output[0].content[0].text=JSON.stringify(reviewed);
       }
       else { writerCalls++; output.output[0].content[0].text=memoryProse; }
@@ -187,6 +187,20 @@ try {
     if(!real) {assert.equal(writerCalls,3); assert.equal(memoryCalls,3);assert.equal(reviewCalls,3);assert.ok(report.criticalPause&&report.authorOverride);}
     await page.screenshot({path:`${folder}/completed.png`});
   });
+  if(!real) await check("reopening a completed chapter fetches full novel once and keeps completed memory/run visible",async()=>{
+    let fullReads=0;
+    const observe=request=>{if(request.method()==="GET"&&new URL(request.url()).pathname===`/api/novels/${seed.novelId}`)fullReads++;};
+    page.on("request",observe);
+    try {
+      await page.goto(`${novelUrl}?chapter=${seed.chapterId}`);
+      await page.getByText("连续创作完成",{exact:true}).waitFor();
+      await page.getByText("正文已保存 · 记忆已更新",{exact:true}).waitFor();
+      await pause(7000);
+      assert.equal(fullReads,1,"Historical completion must not reload the full aggregate");
+      assert.equal(await page.locator('.chapter-list nav button').count(),4);
+      report.completedChapterFullReads=fullReads;
+    } finally {page.off("request",observe);}
+  });
   if(!real) await check("single next chapter shows preview before save and completes memory after confirmation",async()=>{
     const single=await seedChapterSql(fixture.db,identities.b,400);
     const second=await browser.newContext({viewport:{width:1440,height:1000}}); second.setDefaultTimeout(45000);
@@ -215,7 +229,16 @@ try {
     ]:[["normal",normal,[]]];
     const second=await browser.newContext({viewport:{width:1440,height:1000}});second.setDefaultTimeout(45000);
     const editor=await second.newPage();editor.on("pageerror",e=>report.errors.push({stage,message:e.message}));
-    editor.on("console",m=>{if(m.type()==="error")report.errors.push({stage,message:m.text()});});
+    let signingOut=false;
+    editor.on("console",m=>{
+      if(m.type()!=="error")return;
+      // A poll already in flight when sign-out clears cookies must be denied.
+      // Only this exact auth response during the explicit logout is expected.
+      if(signingOut&&m.text()==="Failed to load resource: the server responded with a status of 401 (Unauthorized)") {
+        report.expectedLogoutDenials=(report.expectedLogoutDenials||0)+1;return;
+      }
+      report.errors.push({stage,message:m.text()});
+    });
     await login(editor,"b");report.reviewCases ||= [];
     let last;
     try {
@@ -271,7 +294,7 @@ try {
       if(history.data.length===1)await panel.getByRole("button",{name:"重新审核",exact:true}).click();
       for(let i=0;i<180;i++){const rows=(await clients.b.from("chapter_reviews").select("id,status").eq("chapter_id",last.chapterId)).data;if(rows?.length===2&&rows.every(r=>r.status!=="running"))break;await pause(3000);}
       await panel.getByLabel("审核历史",{exact:true}).waitFor();await panel.getByLabel("审核历史",{exact:true}).selectOption(last.review.id);
-      await editor.getByRole("button",{name:"退出",exact:true}).click();await editor.waitForURL(base+"/");await login(editor,"b");
+      signingOut=true;await editor.getByRole("button",{name:"退出",exact:true}).click();await editor.waitForURL(base+"/");signingOut=false;await login(editor,"b");
       await editor.goto(`${base}/novel/${last.novelId}/chapters?chapter=${last.chapterId}`);await editor.getByLabel("审核历史",{exact:true}).waitFor();
       await editor.screenshot({path:`${folder}/editor-history.png`});
     } finally {await second.close();}

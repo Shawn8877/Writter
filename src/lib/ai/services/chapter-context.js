@@ -1,5 +1,6 @@
 import "server-only";
 import { AiError } from "../errors.js";
+import { currentCharacterContext, summaryContext } from "../context/context-projection.js";
 
 export const CHAPTER_CONTEXT_BYTES = 180000;
 export function chapterDatabaseError(error) {
@@ -33,10 +34,10 @@ export async function buildChapterContext(supabase, { novelId, chapterId, expect
     data(supabase.from("novel_bible").select("*").eq("novel_id", novelId).maybeSingle()),
     data(supabase.from("characters").select("name,aliases,role,personality,description,background,goals,relationships,abilities,current_state,is_alive").eq("novel_id", novelId).order("created_at").limit(81)),
     data(supabase.from("world_entries").select("category,name,content,metadata").eq("novel_id", novelId).order("created_at").limit(121)),
-    data(supabase.from("memory_items").select("memory_type,title,content,importance,chapter_id").eq("novel_id", novelId).eq("status", "active").order("importance", { ascending: false }).order("updated_at", { ascending: false }).limit(80)),
+    data(supabase.from("memory_items").select("id,memory_type,title,content,importance,chapter_id").eq("novel_id", novelId).eq("status", "active").order("importance", { ascending: false }).order("updated_at", { ascending: false }).limit(80)),
     data(supabase.from("chapters").select("id,title,sort_order,summary").eq("novel_id", novelId).lt("sort_order", chapter.sort_order).order("sort_order", { ascending: false }).limit(5)),
     chapter.volume_id ? data(supabase.from("volumes").select("title,summary,chapter_range,beats").eq("novel_id", novelId).eq("id", chapter.volume_id).maybeSingle()) : null,
-    data(supabase.from("memory_items").select("title,content,importance,chapter_id").eq("novel_id", novelId).eq("memory_type", "foreshadowing").eq("status", "active").order("importance", { ascending: false }).order("updated_at", { ascending: false }).limit(40)),
+    data(supabase.from("memory_items").select("id,memory_type,title,content,importance,chapter_id").eq("novel_id", novelId).eq("memory_type", "foreshadowing").eq("status", "active").order("importance", { ascending: false }).order("updated_at", { ascending: false }).limit(40)),
     data(supabase.from("chapter_memory_jobs").select("chapter_id,status").eq("novel_id", novelId).neq("chapter_id", chapterId).in("status", ["pending", "running", "failed", "stale", "needs_review"]).limit(1)),
   ]);
   if (!bible || ![bible.core_premise, bible.synopsis, bible.main_conflict].some((v) => v?.trim())) throw new AiError("BIBLE_REQUIRED", "请先完善小说核心设定，再生成章节。", 400);
@@ -51,14 +52,27 @@ export async function buildChapterContext(supabase, { novelId, chapterId, expect
   const currentSummaries = summaries.filter((summary) => !reviewed.has(summary.chapter_id));
   if (unfinished.length) throw new AiError("MEMORY_NOT_READY", "其他章节的记忆尚未更新完成，请先完成或重试记忆分析。", 409);
   const previousChapter = previous.length ? await data(supabase.from("chapters").select("title,content,sort_order").eq("novel_id", novelId).eq("id", previous[0].id).maybeSingle()) : null;
+  const recentSummaries = previous.map((c) => {
+    const summary = summaryContext(currentSummaries.find((s) => s.chapter_id === c.id));
+    // A chapter's "next" instructions expire after its immediate successor.
+    // Keep the historical summary/facts, not five competing sets of plans.
+    if (summary && c.id !== previous[0].id) delete summary.next_chapter_requirements;
+    return { title: c.title, number: c.sort_order, summary: c.summary, ...summary };
+  }).reverse();
+  // The same durable clue can be selected by both queries. Send it once in the
+  // dedicated unresolved group; retain clues beyond that group's limit in the
+  // general selection. Compare IDs, never similar wording or different facts.
+  const clueIds = new Set(unresolvedForeshadowing.map(row => row.id));
+  const modelMemory = ({ id: _id, ...row }) => row;
   const context = {
     novel: fields(novel, ["title", "genre", "style", "premise", "protagonist", "master_outline", "chapter_word_target"]),
     bible: fields(bible, ["core_premise", "world_rules", "story_tone", "writing_style", "protagonist_arc", "main_conflict", "power_system", "romance_direction", "ending_direction", "forbidden_changes", "synopsis", "storyline", "antagonist", "story_stages"]),
-    chapter: fields(chapter, ["title", "outline", "sort_order"]), volume, characters, world, memories,
+    chapter: fields(chapter, ["title", "outline", "sort_order"]), volume, characters: characters.map(currentCharacterContext), world,
+    memories: memories.filter(row => !clueIds.has(row.id)).map(modelMemory),
     previousChapter,
-    recentSummaries: previous.map((c) => ({ title: c.title, number: c.sort_order, summary: c.summary, ...currentSummaries.find((s) => s.chapter_id === c.id) })).reverse(),
-    continuityRequirements: [...(bible.builder_metadata?.continuityRequirements || bible.builder_metadata?.specialRequirements || []), ...(currentSummaries.find((s) => s.chapter_id === previous[0]?.id)?.next_chapter_requirements || [])],
-    unresolvedForeshadowing,
+    recentSummaries,
+    continuityRequirements: summaryContext([...(bible.builder_metadata?.continuityRequirements || bible.builder_metadata?.specialRequirements || []), ...(currentSummaries.find((s) => s.chapter_id === previous[0]?.id)?.next_chapter_requirements || [])]),
+    unresolvedForeshadowing: unresolvedForeshadowing.map(modelMemory),
   };
   const contextBytes = Buffer.byteLength(JSON.stringify(context), "utf8");
   if (contextBytes > CHAPTER_CONTEXT_BYTES) throw new AiError("CONTEXT_TOO_LARGE", "章节上下文过长，请精简设定、重要记忆或上一章正文后重试。没有调用 AI。", 413);

@@ -16,6 +16,7 @@ export function normalizeAiError(error) {
   else if (error?.status === 404 || error?.code === "model_not_found") result = new AiError("AI_MODEL_UNAVAILABLE", "配置的 AI 模型暂不可用，请管理员检查模型设置。", 503);
   else if (["context_length_exceeded", "context_window_exceeded"].includes(error?.code)) result = new AiError("CONTEXT_TOO_LARGE", "章节上下文超出模型容量，请精简资料后重试。", 413);
   else if (error?.status === 400 || error?.status === 422) result = new AiError("AI_REQUEST_REJECTED", "AI 服务未接受本次请求，请管理员检查模型配置。", 503);
+  else if ([500,502,503,504].includes(error?.status)) result = new AiError("AI_UPSTREAM_ERROR", "AI 服务暂时不可用，请稍后重试。", 503);
   else if (error instanceof APIConnectionError || error?.name === "APIConnectionError" || error instanceof TypeError) result = new AiError("AI_NETWORK_ERROR", "暂时无法连接 AI 服务，请稍后重试。", 503);
   else result = new AiError("AI_UNAVAILABLE", "AI 构建暂时失败，请稍后重试。", 503);
   result.providerRequestId = error?.requestID || error?.request_id || null;

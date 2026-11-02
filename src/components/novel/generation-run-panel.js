@@ -25,7 +25,8 @@ export function GenerationRunPanel({ novel, onViewChapter }) {
   const [autoDrive, setAutoDrive] = useState(false);
   const polling = useRef(false);
   const action = useRef(false);
-  const completed = useRef(0);
+  const loadedRevision = useRef(novel.revision);
+  useEffect(() => { loadedRevision.current = novel.revision; }, [novel.revision]);
   const lastWritten = Math.max(0, ...novel.chapters.filter((chapter) => chapter.body?.trim()).map((chapter) => chapter.number));
   const nextNumber = lastWritten + 1;
 
@@ -36,12 +37,8 @@ export function GenerationRunPanel({ novel, onViewChapter }) {
       const latest = await api.latest(novel.id);
       setRun(latest);
       setOffline(false);
-      if (latest) {
-        const countDone = latest.chapters.filter((chapter) => chapter.status === "completed").length;
-        if (countDone > completed.current || latest.status === "completed" && completed.current !== countDone) {
-          completed.current = countDone;
-          await refreshNovel(novel.id);
-        }
+      if (latest?.novelRevision > loadedRevision.current) {
+        await refreshNovel(novel.id, { dedupe: true, minimumRevision: latest.novelRevision });
       }
     } catch (problem) {
       if (problem instanceof TypeError) setOffline(true);
